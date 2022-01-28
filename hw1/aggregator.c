@@ -9,7 +9,7 @@ void main(int argc, char* argv[])
     pid_t producer_pids[5]; // allocate for max number of producers
     char str_aggregator_pid[1024];
     char str_producer_id[1024];
-    char* producer_args[]= { "./producer.out", str_aggregator_pid, str_producer_id};
+    char* producer_args[]= { "./producer.out", str_aggregator_pid, str_producer_id, NULL};
 
     // confirm correct numbers of args
     if(argc != 2)

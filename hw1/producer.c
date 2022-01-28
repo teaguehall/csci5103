@@ -6,7 +6,7 @@ void main(int argc, char* argv[0])
 {
     pid_t aggregator_pid;
     int producer_id;
-    
+
     // confirm number of arguments
     if(argc != 3)
     {
@@ -16,15 +16,15 @@ void main(int argc, char* argv[0])
 
     // grab aggregator PID
     aggregator_pid = atoi(argv[1]);
-    if(aggregator_pid)
+    if(aggregator_pid == 0)
     {
-        printf("ERROR: Please specify aggregator process ID and producer ID. Exiting...\n");
+        printf("ERROR: Invalid aggregator PID specified Exiting...\n");
         exit(EXIT_FAILURE);
     }
 
     // grab producer ID
     producer_id = atoi(argv[2]); // TODO - should we confirm valid producer ID?
     
-    printf("Hello from producer %d!\n", producer_id);
+    printf("Aggregator PID = %u, Producer ID = %d!\n", aggregator_pid, producer_id);
     return;
 }
