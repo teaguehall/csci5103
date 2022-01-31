@@ -1,12 +1,36 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <unistd.h>
+#include <signal.h>
+#include <errno.h>
+#include <string.h>
+
+// allocate status info for max max number of producers
+pid_t producer_pids[5] = {0, 0, 0, 0, 0};
+int producer_initialized[5] = {0, 0, 0, 0, 0};
+int producer_terminated[5] = {0, 0, 0, 0, 0}; 
+
+void signalHandler(int signal, siginfo_t* pinfo, void* pdata)
+{
+    int producer = signal - SIGRTMIN;
+
+    // interpret result as producer PID if first message received
+    //
+
+    printf("Producer signal %u initialized, value = %d!\n", signal, pinfo->si_value.sival_int);
+}
 
 void main(int argc, char* argv[])
 {
+    sigset_t blocked_mask, old_mask;
+    sigset_t wait_mask;
+
+    struct sigaction new_action, old_action;
+
+    int error;
     int producer, max_producers;
     pid_t aggregator_pid;
-    pid_t producer_pids[5]; // allocate for max number of producers
+    
     char str_aggregator_pid[1024];
     char str_producer_id[1024];
     char* producer_args[]= { "./producer.out", str_aggregator_pid, str_producer_id, NULL};
@@ -26,11 +50,49 @@ void main(int argc, char* argv[])
         exit(EXIT_FAILURE);
     }
 
+    // create empty signal set
+    error = sigemptyset(&blocked_mask);
+    if(error)
+    {
+        printf("ERROR: Failed to create empty signal set. %s, Exiting...\n", strerror(errno));
+        exit(EXIT_FAILURE);
+    }
+
+    // configure signal handlers & block
+    for(producer = 0; producer < max_producers; producer++)
+    {
+        // add signal to blocked signal mask
+        error = sigaddset(&blocked_mask, SIGRTMIN + producer);
+        if(error)
+        {
+            printf("ERROR: Failed to add signal to set. %s, Exitting...", strerror(errno));
+            exit(EXIT_FAILURE);
+        }
+
+        // map signal to handler function
+        new_action.sa_flags = SA_SIGINFO;
+        new_action.sa_sigaction = &signalHandler;
+        error =  sigaction(SIGRTMIN + producer, &new_action, &old_action);
+        if(error)
+        {
+            printf("ERROR: Failed to map signal handler to producer %u. %s. Exiting\n", producer, strerror(errno));
+            exit(EXIT_FAILURE);
+        }
+    }
+
+    // block signal mask
+    error = sigprocmask (SIG_SETMASK, &blocked_mask, &old_mask);
+    if(error)
+    {
+        printf("Failed to set signal mask. %s, Exitting...", strerror(errno));
+        exit(EXIT_FAILURE);
+    }
+
     // write aggregator pid to arg vector
     sprintf(str_aggregator_pid, "%u", getpid());
 
-
     // create producers
+    // TODO - apparently we can't just save the initial PID returned from fork?
     for(producer = 0; producer < max_producers; producer++)
     {
         producer_pids[producer] = fork();
@@ -45,6 +107,39 @@ void main(int argc, char* argv[])
         }
 
     }
+
+    // wait for all signals to intialize
+    for(producer = 0; producer < max_producers; producer++)
+    {
+        // block all signals
+        error = sigfillset(&wait_mask);
+        if(error)
+        {
+            printf("ERROR: Failed to set signal mask, %s, Exiting...", strerror(errno));
+            exit(EXIT_FAILURE);
+        }
+
+        // remove current producer signal
+        error = sigdelset(&wait_mask, SIGRTMIN + producer);
+        if(error)
+        {
+            printf("ERROR: Failed to remove signal from set, %s, Exiting...", strerror(errno));
+            exit(EXIT_FAILURE);
+        }
+
+        // wait for signal
+        sigsuspend(&wait_mask);
+    }
+
+    // wait for initialization signals from each process
+    while(1)
+    {
+        sleep(1);
+        printf("Aggregator alive..\n");
+    }
+
+    // TODO
+    printf("producers have initialized!\n");
 
     sleep(1);
     printf("Aggregator ended\n");
