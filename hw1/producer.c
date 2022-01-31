@@ -4,10 +4,12 @@
 #include <signal.h>
 #include <string.h>
 #include <errno.h>
+#include <unistd.h>
 
 void main(int argc, char* argv[0])
 {
     int error;
+    union sigval value;
     pid_t aggregator_pid;
     int producer_id;
 
@@ -31,16 +33,19 @@ void main(int argc, char* argv[0])
     
     printf("Aggregator PID = %u, Producer ID = %d!\n", aggregator_pid, producer_id);
 
-    union sigval value;
-    value.sival_int = 1212;
+    
+    value.sival_int = getpid();
 
-    // send test signal to aggregator
+    // send PID to aggreagtor
     error = sigqueue(aggregator_pid, SIGRTMIN + producer_id, value);
     if(error)
     {
         printf("ERROR: Failed to send message to producer, %s, Exiting...\n", strerror(errno));
         exit(EXIT_FAILURE);
     }
+
+    // wait for confirmation
+    //TODO
 
     return;
 }

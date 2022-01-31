@@ -5,19 +5,39 @@
 #include <errno.h>
 #include <string.h>
 
-// allocate status info for max max number of producers
-pid_t producer_pids[5] = {0, 0, 0, 0, 0};
+// global data shared between main routine and signal handler
+pid_t producer_pids[5];
+int producer_vals[5];
 int producer_initialized[5] = {0, 0, 0, 0, 0};
 int producer_terminated[5] = {0, 0, 0, 0, 0}; 
 
-void signalHandler(int signal, siginfo_t* pinfo, void* pdata)
+// SIGRTMIN handler
+void signalHandler(int signal, siginfo_t* pinfo, void* pcontext)
 {
     int producer = signal - SIGRTMIN;
 
-    // interpret result as producer PID if first message received
-    //
+    // initialize if first signal received
+    if(!producer_initialized[producer])
+    {
+        producer_pids[producer] = pinfo->si_value.sival_int;
+        producer_initialized[producer] = 1;
 
-    printf("Producer signal %u initialized, value = %d!\n", signal, pinfo->si_value.sival_int);
+        printf("Producer %u sent initialize PID value = %d!\n", producer, pinfo->si_value.sival_int);
+    }
+    else
+    {
+        // check if negative 
+        if(pinfo->si_value.sival_int == -1)
+        {
+            producer_terminated[producer] = 1;
+
+            printf("Producer %u sent termination value!\n", signal);
+        }
+        else
+        {
+            producer_vals[producer] = pinfo->si_value.sival_int;
+        }
+    }
 }
 
 void main(int argc, char* argv[])
@@ -81,7 +101,7 @@ void main(int argc, char* argv[])
     }
 
     // block signal mask
-    error = sigprocmask (SIG_SETMASK, &blocked_mask, &old_mask);
+    error = sigprocmask (SIG_BLOCK, &blocked_mask, &old_mask);
     if(error)
     {
         printf("Failed to set signal mask. %s, Exitting...", strerror(errno));
