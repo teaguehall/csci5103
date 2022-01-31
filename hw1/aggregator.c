@@ -112,20 +112,15 @@ void main(int argc, char* argv[])
     sprintf(str_aggregator_pid, "%u", getpid());
 
     // create producers
-    // TODO - apparently we can't just save the initial PID returned from fork?
     for(producer = 0; producer < max_producers; producer++)
     {
-        producer_pids[producer] = fork();
-
-        // create producer process
-        if(producer_pids[producer] == 0)
+        // fork and exec producer
+        if(fork() == 0)
         {
             // write current producer ID to arg vector
             sprintf(str_producer_id, "%u", producer);
-            
             execvp(producer_args[0], producer_args);
         }
-
     }
 
     // wait for all signals to intialize
@@ -149,13 +144,22 @@ void main(int argc, char* argv[])
 
         // wait for signal
         sigsuspend(&wait_mask);
+
+        // send response signal
+        error = kill(producer_pids[producer], SIGUSR1);
+        if(error)
+        {
+            printf("ERROR: Failed to send signal to producer %u, %s, Exiting...\n", producer, strerror(errno));
+            exit(EXIT_FAILURE);
+        }
     }
 
     // wait for initialization signals from each process
     while(1)
     {
         sleep(1);
-        printf("Aggregator alive..\n");
+        printf("Aggregator alive.. id = %u\n",producer_pids[0]);
+        kill(producer_pids[0], SIGUSR1);
     }
 
     // TODO
