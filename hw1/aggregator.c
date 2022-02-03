@@ -4,19 +4,19 @@
 #include <signal.h>
 #include <errno.h>
 #include <string.h>
+#include <limits.h>
 
 // prototypes
 int aggregatorMax(void);
 int aggregatorMin(void);
-int aggregatorAvg(void);
 int aggregatorSum(void);
 int aggrevatorReceived(void);
+double aggregatorAvg(void);
 void logger(int signal, int value);
 
 // global data shared between main routine and signal handler
 pid_t producer_pids[5];
-int producer_initialized[5] = {0, 0, 0, 0, 0};
-int producer_vals[5] = {0, 0, 0, 0, 0}; 
+int producer_vals[5] = {-1, -1, -1, -1, -1}; // -1 indicates inactive producer
 int all_terminated = 0;
 
 // SIGRTMIN handler
@@ -25,10 +25,10 @@ void signalHandler(int signal, siginfo_t* pinfo, void* pcontext)
     int producer = signal - SIGRTMIN;
 
     // initialize if first signal received
-    if(!producer_initialized[producer])
+    if(producer_vals[producer] == -1)
     {
         producer_pids[producer] = pinfo->si_value.sival_int;
-        producer_initialized[producer] = 1;
+        producer_vals[producer] = 0;
 
         printf("Producer %u sent initialize PID value = %d!\n", producer, pinfo->si_value.sival_int);
     }
@@ -39,12 +39,7 @@ void signalHandler(int signal, siginfo_t* pinfo, void* pcontext)
 }
 
 void main(int argc, char* argv[])
-{
-    logger(1, 11);
-    //logger(2, 22);
-    //logger(3, 33);
-    
-    
+{   
     sigset_t blocked_mask, old_mask;
     sigset_t wait_mask;
 
@@ -218,4 +213,109 @@ void logger(int signal, int value)
     }
 
     fflush(logfile);
+}
+
+// returns max val
+int aggregatorMax(void)
+{
+    int producer;
+    int max = INT_MIN;
+
+    // iterate over all values
+    for(producer = 0; producer < 5; producer++)
+    {
+        // skip values of inactive producer
+        if(producer_vals[producer] > -1)
+        {
+            // set new max if necessary
+            if(producer_vals[producer] > max)
+            {
+                max = producer_vals[producer];
+            }
+        }
+    }
+
+    return max;
+}
+
+// returns min val
+int aggregatorMin(void)
+{
+    int producer;
+    int min = INT_MAX;
+
+    // iterate over all values
+    for(producer = 0; producer < 5; producer++)
+    {
+        // skip values of inactive producer
+        if(producer_vals[producer] > -1)
+        {
+            // set new max if necessary
+            if(producer_vals[producer] < min)
+            {
+                min = producer_vals[producer];
+            }
+        }
+    }
+
+    return min;
+}
+
+// returns average val
+double aggregatorAvg(void)
+{
+    int producer;
+    int sum = 0;
+    int vals = 0;
+
+    // iterate over all values
+    for(producer = 0; producer < 5; producer++)
+    {
+        // skip values of inactive producer
+        if(producer_vals[producer] > -1)
+        {
+            sum += producer_vals[producer];
+            vals++;
+        }
+    }
+
+    return 1.0 * sum / vals;
+}
+
+// sums values
+int aggregatorSum(void)
+{
+    int producer;
+    int sum = 0;
+    
+    // iterate over all values
+    for(producer = 0; producer < 5; producer++)
+    {
+        // skip values of inactive producer
+        if(producer_vals[producer] > -1)
+        {
+            sum += producer_vals[producer];
+        }
+    }
+
+    return sum;
+}
+
+// returns number of received values
+int aggrevatorReceived(void)
+{
+    int producer;
+    int vals = 0;
+    
+    // iterate over all values
+    for(producer = 0; producer < 5; producer++)
+    {
+        // skip values of inactive producer
+        if(producer_vals[producer] > -1)
+        {
+            vals++;
+        }
+    }
+
+    return vals;   
 }
