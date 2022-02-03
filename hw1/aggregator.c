@@ -12,6 +12,9 @@ int aggregatorMin(void);
 int aggregatorSum(void);
 int aggrevatorReceived(void);
 double aggregatorAvg(void);
+void signalHandler(int signal, siginfo_t* pinfo, void* pcontext);
+void signalReceive(int signal);
+void signalRespond(int pid);
 void logger(int signal, int value);
 
 // global data shared between main routine and signal handler
@@ -19,36 +22,13 @@ pid_t producer_pids[5];
 int producer_vals[5] = {-1, -1, -1, -1, -1}; // -1 indicates inactive producer
 int all_terminated = 0;
 
-// SIGRTMIN handler
-void signalHandler(int signal, siginfo_t* pinfo, void* pcontext)
-{
-    int producer = signal - SIGRTMIN;
-
-    // initialize if first signal received
-    if(producer_vals[producer] == -1)
-    {
-        producer_pids[producer] = pinfo->si_value.sival_int;
-        producer_vals[producer] = 0;
-
-        printf("Producer %u sent initialize PID value = %d!\n", producer, pinfo->si_value.sival_int);
-    }
-    else
-    {
-        producer_vals[producer] = pinfo->si_value.sival_int;
-    }
-}
-
 void main(int argc, char* argv[])
 {   
-    sigset_t blocked_mask, old_mask;
-    sigset_t wait_mask;
-
-    struct sigaction new_action, old_action;
-
     int error;
     int producer, max_producers;
     pid_t aggregator_pid;
-    
+    sigset_t blocked_mask, old_mask;
+    struct sigaction new_action, old_action;
     char str_aggregator_pid[1024];
     char str_producer_id[1024];
     char* producer_args[]= { "./producer.out", str_aggregator_pid, str_producer_id, NULL};
@@ -124,67 +104,100 @@ void main(int argc, char* argv[])
     // wait for all signals to intialize
     for(producer = 0; producer < max_producers; producer++)
     {
-        // block all signals
-        error = sigfillset(&wait_mask);
-        if(error)
-        {
-            printf("ERROR: Failed to set signal mask, %s, Exiting...", strerror(errno));
-            exit(EXIT_FAILURE);
-        }
-
-        // remove current producer signal
-        error = sigdelset(&wait_mask, SIGRTMIN + producer);
-        if(error)
-        {
-            printf("ERROR: Failed to remove signal from set, %s, Exiting...", strerror(errno));
-            exit(EXIT_FAILURE);
-        }
-
-        // wait for signal
-        sigsuspend(&wait_mask);
-
-        // send response signal
-        error = kill(producer_pids[producer], SIGUSR1);
-        if(error)
-        {
-            printf("ERROR: Failed to send signal to producer %u, %s, Exiting...\n", producer, strerror(errno));
-            exit(EXIT_FAILURE);
-        }
+        signalReceive(SIGRTMIN + producer);
+        signalRespond(producer_pids[producer]);
     }
 
     // perform communication rounds
+    int round = 0;
     while(!all_terminated)
     {
         // receive value from each producer
         for(producer = 0; producer < max_producers; producer++)
         {
             // only wait for producer if it's still active
-            if(producer_vals[producer] >= 0)
+            if(producer_vals[producer] > -1)
             {
-
+                signalReceive(SIGRTMIN + producer);
+                signalRespond(producer_pids[producer]);
             }
-
         }
 
-
-
-
+        // print stats
+        printf("Round %u: Avg = %f, Max = %d, Min = %d, Sum = %d, Numbers Received = %d\n", round++, aggregatorAvg(), aggregatorMax(), aggregatorMin(), aggregatorSum(), aggrevatorReceived());
     }
 
-
-    // wait for initialization signals from each process
-    while(1)
-    {
-        sleep(1);
-        printf("Aggregator alive.. id = %u\n",producer_pids[0]);
-        kill(producer_pids[0], SIGUSR1);
-    }
-
-    // TODO
-    printf("producers have initialized!\n");
-
-    sleep(1);
     printf("Aggregator ended\n");
+}
+
+// handler for RT signals
+void signalHandler(int signal, siginfo_t* pinfo, void* pcontext)
+{
+    int producer = signal - SIGRTMIN;
+
+    // initialize if first signal received
+    if(producer_vals[producer] == -1)
+    {
+        producer_pids[producer] = pinfo->si_value.sival_int;
+        producer_vals[producer] = 0;
+    }
+    else
+    {
+        producer_vals[producer] = pinfo->si_value.sival_int;
+    }
+
+    // check if all terminated
+    for(int i = 0; i < 5; i++)
+    {
+        if(producer_vals[i] == -1)
+        {
+            all_terminated = 1;
+        }
+        else
+        {
+            all_terminated = 0;
+            break;
+        }
+    }
+}
+
+// suspend for specified signal
+void signalReceive(int signal)
+{
+    sigset_t wait_mask;
+    int error;
+    
+    // block all signal
+    error = sigfillset(&wait_mask);
+    if(error)
+    {
+        printf("ERROR: Failed to set signal mask, %s, Exiting...", strerror(errno));
+        exit(EXIT_FAILURE);
+    }
+
+    // unblock specified signal
+    error = sigdelset(&wait_mask, signal);
+    if(error)
+    {
+        printf("ERROR: Failed to remove signal from set, %s, Exiting...", strerror(errno));
+        exit(EXIT_FAILURE);
+    }
+
+    // wait for signal
+    sigsuspend(&wait_mask);
+}
+
+// send response signal to producer
+void signalRespond(int pid)
+{
+    int error;
+    
+    error = kill(pid, SIGUSR1);
+    if(error)
+    {
+        printf("ERROR: Failed to send signal to PID %u, %s, Exiting...\n", pid, strerror(errno));
+        exit(EXIT_FAILURE);
+    }
 }
 
 // logs signal and value to file

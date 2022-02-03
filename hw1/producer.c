@@ -6,9 +6,8 @@
 #include <errno.h>
 #include <unistd.h>
 
-void debugHandler(int signal)
+void handlerDoNothing(int signal)
 {
-    printf("Kill Received!\n");
 }
 
 void main(int argc, char* argv[0])
@@ -75,7 +74,7 @@ void main(int argc, char* argv[0])
     }
 
     // map user 1 signal to handler
-    signal(SIGUSR1, debugHandler);
+    signal(SIGUSR1, handlerDoNothing);
 
     // send PID to aggregator
     value.sival_int = getpid();
@@ -88,7 +87,6 @@ void main(int argc, char* argv[0])
 
     // wait for signal response
     sigsuspend(&wait_mask);
-    printf("Producer %u received confirmation\n", producer_id);
 
     // open file
     char filename[64];
@@ -129,8 +127,5 @@ void main(int argc, char* argv[0])
         exit(EXIT_FAILURE);
     }
 
-    // success
-    printf("SUCCESS: Producer %d finished\n", producer_id);
-    
     return;
 }
