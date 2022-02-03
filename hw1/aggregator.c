@@ -124,7 +124,10 @@ void main(int argc, char* argv[])
         }
 
         // print stats
-        printf("Round %u: Avg = %f, Max = %d, Min = %d, Sum = %d, Numbers Received = %d\n", round++, aggregatorAvg(), aggregatorMax(), aggregatorMin(), aggregatorSum(), aggrevatorReceived());
+        if(aggrevatorReceived() > 0)
+        {
+            printf("Round %u: Avg = %f, Max = %d, Min = %d, Sum = %d, Numbers Received = %d\n", round++, aggregatorAvg(), aggregatorMax(), aggregatorMin(), aggregatorSum(), aggrevatorReceived());
+        }
     }
 
     printf("Aggregator ended\n");
@@ -134,6 +137,9 @@ void main(int argc, char* argv[])
 void signalHandler(int signal, siginfo_t* pinfo, void* pcontext)
 {
     int producer = signal - SIGRTMIN;
+
+    // log signal
+    logger(signal, pinfo->si_value.sival_int);
 
     // initialize if first signal received
     if(producer_vals[producer] == -1)
@@ -164,8 +170,8 @@ void signalHandler(int signal, siginfo_t* pinfo, void* pcontext)
 // suspend for specified signal
 void signalReceive(int signal)
 {
-    sigset_t wait_mask;
     int error;
+    sigset_t wait_mask;
     
     // block all signal
     error = sigfillset(&wait_mask);
