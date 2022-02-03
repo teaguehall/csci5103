@@ -8,7 +8,7 @@
 
 void debugHandler(int signal)
 {
-    //printf("Kill Received!\n");
+    printf("Kill Received!\n");
 }
 
 void main(int argc, char* argv[0])
@@ -77,7 +77,7 @@ void main(int argc, char* argv[0])
     // map user 1 signal to handler
     signal(SIGUSR1, debugHandler);
 
-    // send PID to aggreagtor
+    // send PID to aggregator
     value.sival_int = getpid();
     error = sigqueue(aggregator_pid, SIGRTMIN + producer_id, value);
     if(error)
@@ -86,10 +86,51 @@ void main(int argc, char* argv[0])
         exit(EXIT_FAILURE);
     }
 
-    // wait for signal
+    // wait for signal response
     sigsuspend(&wait_mask);
-
     printf("Producer %u received confirmation\n", producer_id);
+
+    // open file
+    char filename[64];
+    sprintf(filename, "data%u.txt",producer_id + 1);
+    FILE* file = fopen(filename, "r");
+    if(file == NULL)
+    {
+        printf("ERROR: Failed to open file. %s, Exiting...", strerror(errno));
+    }
+
+    // iterate over file
+    char fileline[64]; 
+    int number;
+    while(fgets(fileline, 64, file) != NULL)
+    {
+        // read number from file
+        sscanf(fileline, "%d", &number);
+
+        // send number
+        value.sival_int = number;
+        error = sigqueue(aggregator_pid, SIGRTMIN + producer_id, value);
+        if(error)
+        {
+            printf("ERROR: Failed to send message to producer, %s, Exiting...\n", strerror(errno));
+            exit(EXIT_FAILURE);
+        }
+
+        // wait for signal response
+        sigsuspend(&wait_mask);
+    }
+
+    // send negative value to signal completion
+    value.sival_int = -1;
+    error = sigqueue(aggregator_pid, SIGRTMIN + producer_id, value);
+    if(error)
+    {
+        printf("ERROR: Failed to send message to producer, %s, Exiting...\n", strerror(errno));
+        exit(EXIT_FAILURE);
+    }
+
+    // success
+    printf("SUCCESS: Producer %d finished\n", producer_id);
     
     return;
 }

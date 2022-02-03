@@ -5,11 +5,19 @@
 #include <errno.h>
 #include <string.h>
 
+// prototypes
+int aggregatorMax(void);
+int aggregatorMin(void);
+int aggregatorAvg(void);
+int aggregatorSum(void);
+int aggrevatorReceived(void);
+void logger(int signal, int value);
+
 // global data shared between main routine and signal handler
 pid_t producer_pids[5];
-int producer_vals[5];
 int producer_initialized[5] = {0, 0, 0, 0, 0};
-int producer_terminated[5] = {0, 0, 0, 0, 0}; 
+int producer_vals[5] = {0, 0, 0, 0, 0}; 
+int all_terminated = 0;
 
 // SIGRTMIN handler
 void signalHandler(int signal, siginfo_t* pinfo, void* pcontext)
@@ -26,22 +34,17 @@ void signalHandler(int signal, siginfo_t* pinfo, void* pcontext)
     }
     else
     {
-        // check if negative 
-        if(pinfo->si_value.sival_int == -1)
-        {
-            producer_terminated[producer] = 1;
-
-            printf("Producer %u sent termination value!\n", signal);
-        }
-        else
-        {
-            producer_vals[producer] = pinfo->si_value.sival_int;
-        }
+        producer_vals[producer] = pinfo->si_value.sival_int;
     }
 }
 
 void main(int argc, char* argv[])
 {
+    logger(1, 11);
+    //logger(2, 22);
+    //logger(3, 33);
+    
+    
     sigset_t blocked_mask, old_mask;
     sigset_t wait_mask;
 
@@ -154,6 +157,26 @@ void main(int argc, char* argv[])
         }
     }
 
+    // perform communication rounds
+    while(!all_terminated)
+    {
+        // receive value from each producer
+        for(producer = 0; producer < max_producers; producer++)
+        {
+            // only wait for producer if it's still active
+            if(producer_vals[producer] >= 0)
+            {
+
+            }
+
+        }
+
+
+
+
+    }
+
+
     // wait for initialization signals from each process
     while(1)
     {
@@ -167,4 +190,32 @@ void main(int argc, char* argv[])
 
     sleep(1);
     printf("Aggregator ended\n");
+}
+
+// logs signal and value to file
+void logger(int signal, int value)
+{
+    static FILE* logfile = NULL;
+    int error;
+
+    // create/open file
+    if(logfile == NULL)
+    {
+        logfile = fopen ("log.txt", "w");
+        if(logfile == NULL)
+        {
+            printf("ERROR: Failed to create/open log.txt, %s, Exiting...", strerror(errno));
+            exit(EXIT_FAILURE);
+        }
+    }
+
+    // write entry
+    error = fprintf(logfile, "Signal: %d Value: %d\n", signal, value);
+    if(error < 0)
+    {
+        printf("ERROR: Failed to write to log.txt, %s, Exiting...", strerror(errno));
+        exit(EXIT_FAILURE);
+    }
+
+    fflush(logfile);
 }
