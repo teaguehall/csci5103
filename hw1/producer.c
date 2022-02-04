@@ -1,3 +1,12 @@
+// Student ID: hall1945
+// Name: Teague Hall
+// Course: CSCI5103 Operating Systems
+// Assignment #1
+// Description: Producer process that gets created by aggregator process.
+// Producer opens up corresponding file and wait for communications to
+// begin from the aggregators. All numbers within file are sent to aggregator
+// after which the file is closed.
+
 #include <stdio.h>
 #include <stdlib.h>
 #include <unistd.h>
@@ -126,8 +135,5 @@ void main(int argc, char* argv[0])
         printf("ERROR: Failed to send message to producer, %s, Exiting...\n", strerror(errno));
         exit(EXIT_FAILURE);
     }
-
-    
-
     return;
 }

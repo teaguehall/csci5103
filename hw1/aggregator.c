@@ -1,6 +1,10 @@
-// 
-// aggregator.c
-
+// Student ID: hall1945
+// Name: Teague Hall
+// Course: CSCI5103 Operating Systems
+// Assignment #1
+// Description: Aggregator process that spawns N number of producer processes per
+// inputted arguments. Coordinates communication rounds between all producer 
+// processes and calculates statistics on received numbers.
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -10,7 +14,7 @@
 #include <string.h>
 #include <limits.h>
 
-// signal function prototypes
+// prototypes
 void signalHandler(int signal, siginfo_t* pinfo, void* pcontext);
 void signalReceive(int signal);
 void signalRespond(int pid);
