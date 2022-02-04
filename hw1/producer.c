@@ -2,6 +2,7 @@
 // Name: Teague Hall
 // Course: CSCI5103 Operating Systems
 // Assignment #1
+// Tested On: csel-kh1260-01.cselabs.umn.edu
 // Description: Producer process that gets created by aggregator process.
 // Producer opens up corresponding file and wait for communications to
 // begin from the aggregators. All numbers within file are sent to aggregator

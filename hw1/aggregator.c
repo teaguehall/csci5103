@@ -2,6 +2,7 @@
 // Name: Teague Hall
 // Course: CSCI5103 Operating Systems
 // Assignment #1
+// Tested On: csel-kh1260-01.cselabs.umn.edu
 // Description: Aggregator process that spawns N number of producer processes per
 // inputted arguments. Coordinates communication rounds between all producer 
 // processes and calculates statistics on received numbers.
