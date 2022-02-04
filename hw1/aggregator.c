@@ -1,3 +1,7 @@
+// 
+// aggregator.c
+
+
 #include <stdio.h>
 #include <stdlib.h>
 #include <unistd.h>
@@ -6,21 +10,21 @@
 #include <string.h>
 #include <limits.h>
 
-// prototypes
-int aggregatorMax(void);
-int aggregatorMin(void);
-int aggregatorSum(void);
-int aggrevatorReceived(void);
-double aggregatorAvg(void);
+// signal function prototypes
 void signalHandler(int signal, siginfo_t* pinfo, void* pcontext);
 void signalReceive(int signal);
 void signalRespond(int pid);
 void logger(int signal, int value);
 
-// global data shared between main routine and signal handler
+// globals shared between main & signal functions
+double stat_avg = 0;
+int stat_max = INT_MIN;
+int stat_min = INT_MAX;
+int stat_total_received = 0;
+int stat_producer_received[5] = {0, 0, 0, 0, 0};
 pid_t producer_pids[5];
-int producer_vals[5] = {-1, -1, -1, -1, -1}; // -1 indicates inactive producer
-int all_terminated = 0;
+int producer_active[5] = {0, 0, 0, 0, 0};
+int producers_remaining = 0;
 
 void main(int argc, char* argv[])
 {   
@@ -110,27 +114,33 @@ void main(int argc, char* argv[])
 
     // perform communication rounds
     int round = 0;
-    while(!all_terminated)
+    while(producers_remaining > 0)
     {
         // receive value from each producer
         for(producer = 0; producer < max_producers; producer++)
         {
             // only wait for producer if it's still active
-            if(producer_vals[producer] > -1)
+            if(producer_active[producer])
             {
                 signalReceive(SIGRTMIN + producer);
                 signalRespond(producer_pids[producer]);
             }
         }
-
-        // print stats
-        if(aggrevatorReceived() > 0)
-        {
-            printf("Round %u: Avg = %f, Max = %d, Min = %d, Sum = %d, Numbers Received = %d\n", round++, aggregatorAvg(), aggregatorMax(), aggregatorMin(), aggregatorSum(), aggrevatorReceived());
-        }
     }
 
-    printf("Aggregator ended\n");
+    // print stats:
+    printf("--------------------------------\n");
+    printf("AGGREGATOR FINISHED - STATS\n");
+    printf("--------------------------------\n");
+    printf("Max: %d\n", stat_max);
+    printf("Min: %d\n", stat_min);
+    printf("Average: %f\n", stat_avg);
+    for(producer = 0; producer < max_producers; producer++)
+    {
+        printf("Signals Received - Producer %d: %d\n", producer + 1, stat_producer_received[producer]);
+    }
+    printf("Signals Received - Total: %d\n", stat_total_received);
+    printf("--------------------------------\n");
 }
 
 // handler for RT signals
@@ -142,27 +152,42 @@ void signalHandler(int signal, siginfo_t* pinfo, void* pcontext)
     logger(signal, pinfo->si_value.sival_int);
 
     // initialize if first signal received
-    if(producer_vals[producer] == -1)
+    if(!producer_active[producer])
     {
         producer_pids[producer] = pinfo->si_value.sival_int;
-        producer_vals[producer] = 0;
+        producer_active[producer] = 1;
+        producers_remaining++;
     }
     else
     {
-        producer_vals[producer] = pinfo->si_value.sival_int;
-    }
-
-    // check if all terminated
-    for(int i = 0; i < 5; i++)
-    {
-        if(producer_vals[i] == -1)
+        // check for termination signal
+        if(pinfo->si_value.sival_int == -1)
         {
-            all_terminated = 1;
+           producer_active[producer] = 0;
+           producers_remaining--;
         }
         else
         {
-            all_terminated = 0;
-            break;
+            // stats: increment total signal count
+            stat_total_received++;
+
+            // stats: increment producer specific count
+            stat_producer_received[producer]++;
+            
+            // stats: check max
+            if(pinfo->si_value.sival_int > stat_max)
+            {
+                stat_max = pinfo->si_value.sival_int;
+            }
+
+            // stats: check min
+            if(pinfo->si_value.sival_int < stat_min)
+            {
+                stat_min = pinfo->si_value.sival_int;
+            }
+
+            // stats: calculate average (running average so we don't need to keep track of all numbers received)
+            stat_avg = stat_avg * (stat_total_received - 1) / stat_total_received + pinfo->si_value.sival_int / stat_total_received;
         }
     }
 }
@@ -182,6 +207,7 @@ void signalReceive(int signal)
     }
 
     // unblock specified signal
+    error = sigdelset(&wait_mask, SIGINT);
     error = sigdelset(&wait_mask, signal);
     if(error)
     {
@@ -212,7 +238,7 @@ void logger(int signal, int value)
     static FILE* logfile = NULL;
     int error;
 
-    // create/open file
+    // create file
     if(logfile == NULL)
     {
         logfile = fopen ("log.txt", "w");
@@ -232,109 +258,4 @@ void logger(int signal, int value)
     }
 
     fflush(logfile);
-}
-
-// returns max val
-int aggregatorMax(void)
-{
-    int producer;
-    int max = INT_MIN;
-
-    // iterate over all values
-    for(producer = 0; producer < 5; producer++)
-    {
-        // skip values of inactive producer
-        if(producer_vals[producer] > -1)
-        {
-            // set new max if necessary
-            if(producer_vals[producer] > max)
-            {
-                max = producer_vals[producer];
-            }
-        }
-    }
-
-    return max;
-}
-
-// returns min val
-int aggregatorMin(void)
-{
-    int producer;
-    int min = INT_MAX;
-
-    // iterate over all values
-    for(producer = 0; producer < 5; producer++)
-    {
-        // skip values of inactive producer
-        if(producer_vals[producer] > -1)
-        {
-            // set new max if necessary
-            if(producer_vals[producer] < min)
-            {
-                min = producer_vals[producer];
-            }
-        }
-    }
-
-    return min;
-}
-
-// returns average val
-double aggregatorAvg(void)
-{
-    int producer;
-    int sum = 0;
-    int vals = 0;
-
-    // iterate over all values
-    for(producer = 0; producer < 5; producer++)
-    {
-        // skip values of inactive producer
-        if(producer_vals[producer] > -1)
-        {
-            sum += producer_vals[producer];
-            vals++;
-        }
-    }
-
-    return 1.0 * sum / vals;
-}
-
-// sums values
-int aggregatorSum(void)
-{
-    int producer;
-    int sum = 0;
-    
-    // iterate over all values
-    for(producer = 0; producer < 5; producer++)
-    {
-        // skip values of inactive producer
-        if(producer_vals[producer] > -1)
-        {
-            sum += producer_vals[producer];
-        }
-    }
-
-    return sum;
-}
-
-// returns number of received values
-int aggrevatorReceived(void)
-{
-    int producer;
-    int vals = 0;
-    
-    // iterate over all values
-    for(producer = 0; producer < 5; producer++)
-    {
-        // skip values of inactive producer
-        if(producer_vals[producer] > -1)
-        {
-            vals++;
-        }
-    }
-
-    return vals;   
 }
