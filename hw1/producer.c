@@ -15,6 +15,7 @@
 #include <errno.h>
 #include <unistd.h>
 
+// SIGUSR1 is mapped to this handler, but nothing to do...
 void handlerDoNothing(int signal)
 {
 }
@@ -127,7 +128,7 @@ void main(int argc, char* argv[0])
         sigsuspend(&wait_mask);
     }
 
-    // send negative value to signal completion
+    // send negative value to indication completion
     value.sival_int = -1;
     error = sigqueue(aggregator_pid, SIGRTMIN + producer_id, value);
     if(error)

@@ -120,13 +120,20 @@ void main(int argc, char* argv[])
     int round = 0;
     while(producers_remaining > 0)
     {
-        // receive value from each producer
+        // receive signals from each active producer
         for(producer = 0; producer < max_producers; producer++)
         {
-            // only wait for producer if it's still active
             if(producer_active[producer])
             {
                 signalReceive(SIGRTMIN + producer);
+            }
+        }
+        
+        // send SIGUSR1 response to each active producer 
+        for(producer = 0; producer < max_producers; producer++)
+        {
+            if(producer_active[producer])
+            {
                 signalRespond(producer_pids[producer]);
             }
         }
@@ -191,7 +198,7 @@ void signalHandler(int signal, siginfo_t* pinfo, void* pcontext)
             }
 
             // stats: calculate average (running average so we don't need to keep track of all numbers received)
-            stat_avg = stat_avg * (stat_total_received - 1) / stat_total_received + pinfo->si_value.sival_int / stat_total_received;
+            stat_avg = stat_avg * (stat_total_received - 1.0) / stat_total_received + 1.0 * pinfo->si_value.sival_int / stat_total_received;
         }
     }
 }
