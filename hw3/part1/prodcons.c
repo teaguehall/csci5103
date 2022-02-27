@@ -39,9 +39,9 @@ int next_index_modifier = 0;
 int next_index_consumer = 0;
 
 // semaphores
-sem_t sem_buffer_free;
-sem_t sem_to_be_modified;
-sem_t sem_to_be_consumed;
+sem_t sem_buffer_avail;
+sem_t sem_todo_modify;
+sem_t sem_todo_consume;
 
 int main(int argc, char* argv[])
 {
@@ -79,9 +79,9 @@ int main(int argc, char* argv[])
     }
 
     // initialize semaphores
-    sem_init(&sem_buffer_free, 0, max_items);
-    sem_init(&sem_to_be_modified, 0, 0);
-    sem_init(&sem_to_be_consumed, 0, 0);
+    sem_init(&sem_buffer_avail, 0, max_items);
+    sem_init(&sem_todo_modify, 0, 0);
+    sem_init(&sem_todo_consume, 0, 0);
 
     // spawn threads
     pthread_create(&tid_producer, NULL, routineProducer, NULL);
@@ -127,8 +127,8 @@ void* routineProducer(void* vargp)
     {
         sleep(1);
         
-        // wait until there is room in the buffer
-        sem_wait(&sem_buffer_free);
+        // wait until available room in buffer for produced item
+        sem_wait(&sem_buffer_avail);
 
         // grab time of day
         if(gettimeofday(&timestamp, NULL) == -1)
@@ -136,17 +136,17 @@ void* routineProducer(void* vargp)
             throwError(errno, "Failed to retrieve timestamp");
         }
 
-        // grab next available item slot from buffer
+        // grab reference to next available buffer item
         pitem = item_buffer + next_index_producer;
 
-        // write to buffer
+        // write data to item
         pitem->id = i;
         sprintf(pitem->timestamp, "%ld-%ld", timestamp.tv_sec, timestamp.tv_usec);
 
-        // signal to modifier
-        sem_post(&sem_to_be_modified);
+        // signal produced item to modifier
+        sem_post(&sem_todo_modify);
 
-        // increment next producer index
+        // increment buffer index for next produced items
         next_index_producer++;
         if(next_index_producer >= max_items)
         {
@@ -161,41 +161,98 @@ void* routineProducer(void* vargp)
     // send EOS signal
     pitem = item_buffer + next_index_producer;
     sprintf(pitem->timestamp, "EOS");
-    sem_post(&sem_to_be_modified);
+    sem_post(&sem_todo_modify);
 }
 
 void* routineModifier(void* vargp)
 {
     Item* pitem;
-    
+    struct timeval timestamp;
+    char timestamp_string[128];
+
     // run indefinitely until EOS received
     while(1)
     {
-        // wait until to be modified signal
-        sem_wait(&sem_to_be_modified);
+        // wait until items need modifying
+        sem_wait(&sem_todo_modify);
 
         printf("Modifier received value!\n");
 
-        // update item pointer
+        // set item pointer to next modifier item
         pitem = item_buffer + next_index_modifier;
 
-        // update next modifier index
+        // increment modifier item index (for next iteration)
         next_index_modifier++;
         if(next_index_modifier >= max_items)
         {
             next_index_modifier = 0;
         }
 
-        // check if EOS
+        // break out if EOS received
         if(strcmp(pitem->timestamp, "EOS") == 0)
         {
             printf("Modifier received EOS\n");
+            sem_post(&sem_todo_consume);
             break;
         }
+
+        // grab time of day
+        if(gettimeofday(&timestamp, NULL) == -1)
+        {
+            throwError(errno, "Failed to retrieve timestamp");
+        }
+        sprintf(timestamp_string, " %ld-%ld", timestamp.tv_sec, timestamp.tv_usec);
+
+        // append new timestamp to existing
+        strcat(pitem->timestamp, timestamp_string);
+        
+        // signal to consumer
+        sem_post(&sem_todo_consume);
     }
 }
 
 void* routineConsumer(void* vargp)
 {
-    printf("Hello from consumer!\n");
+    Item* pitem;
+
+    // create log file
+    FILE* log = fopen("consumer.log", "w");
+    if(log == NULL)
+    {
+        throwError(0, "Failed to create consumer.log");
+    }
+
+    // run indefinitely until EOS received
+    while(1)
+    {
+        // wait until items need consuming
+        sem_wait(&sem_todo_consume);
+
+        // TODO remove this eventually
+        printf("Consumer received item!\n");
+
+        // set item pointer to next consumer item
+        pitem = item_buffer + next_index_consumer;
+
+        // increment modifier item index (for next iteration)
+        next_index_consumer++;
+        if(next_index_consumer >= max_items)
+        {
+            next_index_consumer = 0;
+        }
+
+        // break out if EOS received
+        if(strcmp(pitem->timestamp, "EOS") == 0)
+        {
+            printf("Consumer received EOS\n");
+            break;
+        }
+
+        // log to file
+        fprintf(log, "%d %s\n", pitem->id, pitem->timestamp);
+        fflush(log);
+
+        // signal opening in buffer
+        sem_post(&sem_buffer_avail);
+    }
 }
