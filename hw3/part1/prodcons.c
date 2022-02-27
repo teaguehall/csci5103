@@ -112,7 +112,6 @@ void throwError(int errnum, char* message)
 
 void* routineProducer(void* vargp)
 {
-    Item* pitem;
     struct timeval timestamp;
     
     // create log file
@@ -136,15 +135,13 @@ void* routineProducer(void* vargp)
             throwError(errno, "Failed to retrieve timestamp");
         }
 
-        // grab reference to next available buffer item
-        pitem = item_buffer + next_index_producer;
-
         // write data to item
-        pitem->id = i;
-        sprintf(pitem->timestamp, "%ld-%ld", timestamp.tv_sec, timestamp.tv_usec);
+        item_buffer[next_index_producer].id = i;
+        sprintf(item_buffer[next_index_producer].timestamp, "%ld-%ld", timestamp.tv_sec, timestamp.tv_usec);
 
-        // signal produced item to modifier
-        sem_post(&sem_todo_modify);
+        // log to file
+        fprintf(log, "%d %s\n", item_buffer[next_index_producer].id, item_buffer[next_index_producer].timestamp);
+        fflush(log);
 
         // increment buffer index for next produced items
         next_index_producer++;
@@ -153,20 +150,21 @@ void* routineProducer(void* vargp)
             next_index_producer = 0;
         }
 
-        // log to file
-        fprintf(log, "%d %s\n", pitem->id, pitem->timestamp);
-        fflush(log);
+        // signal produced item to modifier
+        sem_post(&sem_todo_modify);
     }
 
     // send EOS signal
-    pitem = item_buffer + next_index_producer;
-    sprintf(pitem->timestamp, "EOS");
+    sem_wait(&sem_buffer_avail);
+    sprintf(item_buffer[next_index_producer].timestamp, "EOS");
     sem_post(&sem_todo_modify);
+
+    // close log file
+    fclose(log);
 }
 
 void* routineModifier(void* vargp)
 {
-    Item* pitem;
     struct timeval timestamp;
     char timestamp_string[128];
 
@@ -176,25 +174,16 @@ void* routineModifier(void* vargp)
         // wait until items need modifying
         sem_wait(&sem_todo_modify);
 
-        printf("Modifier received value!\n");
-
-        // set item pointer to next modifier item
-        pitem = item_buffer + next_index_modifier;
-
-        // increment modifier item index (for next iteration)
-        next_index_modifier++;
-        if(next_index_modifier >= max_items)
-        {
-            next_index_modifier = 0;
-        }
-
         // break out if EOS received
-        if(strcmp(pitem->timestamp, "EOS") == 0)
+        if(strcmp(item_buffer[next_index_modifier].timestamp, "EOS") == 0)
         {
-            printf("Modifier received EOS\n");
+            printf("Modifier received EOS\n"); // TODO remove
             sem_post(&sem_todo_consume);
             break;
         }
+
+        // TODO remove
+        printf("Modifier received value = %u!\n", item_buffer[next_index_modifier].id);
 
         // grab time of day
         if(gettimeofday(&timestamp, NULL) == -1)
@@ -204,8 +193,15 @@ void* routineModifier(void* vargp)
         sprintf(timestamp_string, " %ld-%ld", timestamp.tv_sec, timestamp.tv_usec);
 
         // append new timestamp to existing
-        strcat(pitem->timestamp, timestamp_string);
-        
+        strcat(item_buffer[next_index_modifier].timestamp, timestamp_string);
+
+        // increment modifier item index (for next iteration)
+        next_index_modifier++;
+        if(next_index_modifier >= max_items)
+        {
+            next_index_modifier = 0;
+        }
+
         // signal to consumer
         sem_post(&sem_todo_consume);
     }
@@ -213,8 +209,6 @@ void* routineModifier(void* vargp)
 
 void* routineConsumer(void* vargp)
 {
-    Item* pitem;
-
     // create log file
     FILE* log = fopen("consumer.log", "w");
     if(log == NULL)
@@ -228,11 +222,19 @@ void* routineConsumer(void* vargp)
         // wait until items need consuming
         sem_wait(&sem_todo_consume);
 
-        // TODO remove this eventually
-        printf("Consumer received item!\n");
+        // break out if EOS received
+        if(strcmp(item_buffer[next_index_consumer].timestamp, "EOS") == 0)
+        {
+            printf("Consumer received EOS\n"); // TODO remove
+            break;
+        }
 
-        // set item pointer to next consumer item
-        pitem = item_buffer + next_index_consumer;
+        // TODO remove
+        printf("Consumer received value = %u!\n", item_buffer[next_index_consumer].id);
+
+        // log to file
+        fprintf(log, "%d %s\n", item_buffer[next_index_consumer].id, item_buffer[next_index_consumer].timestamp);
+        fflush(log);
 
         // increment modifier item index (for next iteration)
         next_index_consumer++;
@@ -241,18 +243,10 @@ void* routineConsumer(void* vargp)
             next_index_consumer = 0;
         }
 
-        // break out if EOS received
-        if(strcmp(pitem->timestamp, "EOS") == 0)
-        {
-            printf("Consumer received EOS\n");
-            break;
-        }
-
-        // log to file
-        fprintf(log, "%d %s\n", pitem->id, pitem->timestamp);
-        fflush(log);
-
         // signal opening in buffer
         sem_post(&sem_buffer_avail);
     }
+
+    // close log file
+    fclose(log);
 }
