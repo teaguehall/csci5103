@@ -4,9 +4,10 @@
 #include <string.h>
 #include <error.h>
 #include <pthread.h>
+#include <semaphore.h>
 
 // globals
-int buffer_size;
+
 int produced_items = 1000;
 
 // prototypes
@@ -16,10 +17,23 @@ void throwError(int error, char* message);
 void* routineProducer(void* vargp);
 void* routineModifier(void* vargp);
 void* routineConsumer(void* vargp);
-
 pthread_t tid_producer;
 pthread_t tid_modifier;
 pthread_t tid_consumer;
+
+// buffer stuff
+typedef struct Item
+{
+    int id;
+    char timestamp[128];
+} Item;
+
+int buffer_size;
+
+// semaphores
+sem_t sem_buffer_free;
+sem_t sem_to_be_modified;
+sem_t sem_to_be_consumed;
 
 int main(int argc, char* argv[])
 {
@@ -48,6 +62,8 @@ int main(int argc, char* argv[])
             throwError(0, "Invalid number of producer items specified");
         }
     }
+
+    // allocate memory for item buffer
 
     // spawn threads
     pthread_create(&tid_producer, NULL, routineProducer, NULL);
