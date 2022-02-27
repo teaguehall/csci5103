@@ -8,7 +8,7 @@
 #include <semaphore.h>
 #include <sys/time.h>
 
-// globals
+//#define DEBUG_PRINT
 
 int produced_items = 1000;
 
@@ -23,7 +23,7 @@ pthread_t tid_producer;
 pthread_t tid_modifier;
 pthread_t tid_consumer;
 
-// buffer items
+// buffer
 typedef struct Item
 {
     int id;
@@ -89,9 +89,17 @@ int main(int argc, char* argv[])
     pthread_create(&tid_consumer, NULL, routineConsumer, NULL);
 
     // wait for threads to finish
-    pthread_join(tid_producer, NULL); printf("Producer finished!\n");
-    pthread_join(tid_modifier, NULL); printf("Modifier finished!\n");
-    pthread_join(tid_consumer, NULL); printf("Consumer finished!\n");
+    pthread_join(tid_producer, NULL); // printf("Producer thread finished\n");
+    pthread_join(tid_modifier, NULL); // printf("Modifier thread finished\n");
+    pthread_join(tid_consumer, NULL); // printf("Consumer thread finished\n");
+
+    printf("--------------------------------\n");
+    printf("|           SUCCESS             \n");
+    printf("--------------------------------\n");
+    printf("Buffer Size: %lu\n", max_items);
+    printf("Produced Items: %u\n", produced_items);
+    printf("Log files outputted locally\n");
+    printf("--------------------------------\n");
 
     return 0;
 }
@@ -124,7 +132,7 @@ void* routineProducer(void* vargp)
     // send produced items to buffer 
     for(int i = 0; i < produced_items; i++)
     {
-        sleep(1);
+        //sleep(1);
         
         // wait until available room in buffer for produced item
         sem_wait(&sem_buffer_avail);
@@ -136,7 +144,7 @@ void* routineProducer(void* vargp)
         }
 
         // write data to item
-        item_buffer[next_index_producer].id = i;
+        item_buffer[next_index_producer].id = i + 1; // add 1 so ID starts 1
         sprintf(item_buffer[next_index_producer].timestamp, "%ld-%ld", timestamp.tv_sec, timestamp.tv_usec);
 
         // log to file
@@ -159,6 +167,10 @@ void* routineProducer(void* vargp)
     sprintf(item_buffer[next_index_producer].timestamp, "EOS");
     sem_post(&sem_todo_modify);
 
+    #ifdef DEBUG_PRINT
+        printf("Producer sent EOS");
+    #endif
+
     // close log file
     fclose(log);
 }
@@ -177,13 +189,17 @@ void* routineModifier(void* vargp)
         // break out if EOS received
         if(strcmp(item_buffer[next_index_modifier].timestamp, "EOS") == 0)
         {
-            printf("Modifier received EOS\n"); // TODO remove
+            #ifdef DEBUG_PRINT 
+                printf("Modifier received EOS\n");
+            #endif
+
             sem_post(&sem_todo_consume);
             break;
         }
 
-        // TODO remove
-        printf("Modifier received value = %u!\n", item_buffer[next_index_modifier].id);
+        #ifdef DEBUG_PRINT
+            printf("Modifier received value = %u\n", item_buffer[next_index_modifier].id);
+        #endif
 
         // grab time of day
         if(gettimeofday(&timestamp, NULL) == -1)
@@ -225,12 +241,16 @@ void* routineConsumer(void* vargp)
         // break out if EOS received
         if(strcmp(item_buffer[next_index_consumer].timestamp, "EOS") == 0)
         {
-            printf("Consumer received EOS\n"); // TODO remove
+            #ifdef DEBUG_PRINT 
+                printf("Consumer received EOS\n");
+            #endif
+
             break;
         }
 
-        // TODO remove
-        printf("Consumer received value = %u!\n", item_buffer[next_index_consumer].id);
+        #ifdef DEBUG_PRINT 
+            printf("Consumer received value = %u\n", item_buffer[next_index_consumer].id);
+        #endif
 
         // log to file
         fprintf(log, "%d %s\n", item_buffer[next_index_consumer].id, item_buffer[next_index_consumer].timestamp);
