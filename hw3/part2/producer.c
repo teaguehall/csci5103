@@ -21,20 +21,21 @@ int main(int argc, char* argv[])
     int shmid = shmget(SHARED_MEM_KEY, sizeof(SharedMemObject), IPC_CREAT);
     if(shmid == -1)
     {
-        throwError(errno, "Failed to retrieve shared memory ID");
+        throwError(errno, "Failed to retrieve shared memory ID (try issuing 'ipcrm -M 0x1A2B3C4D' to remove shared memory)");
     }
 
     // map shared memory to address space
     SharedMemObject* pshared = shmat(shmid, NULL, 0);
     if(pshared == -1)
     {
-        throwError(errno, "Failed map shared memory to address space");
+        throwError(errno, "Failed to map shared memory to address space");
     }
 
+    int debug = 0;
     while(1)
     {
-        printf("Hello from producer\n");
-        pshared->debug = 77;
+        printf("Producing = %d\n", debug++);
+        pshared->debug = debug;
         sleep(1);
     }
 

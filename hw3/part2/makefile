@@ -1,7 +1,7 @@
 CC=gcc
 CFLAGS=-I.
 
-main: prodcons.c producer.c modifier.c consumer.c
+main: prodcons.c producer.c modifier.c consumer.c shared.h
 	$(CC) -o prodcons.out prodcons.c
 	$(CC) -o producer.out producer.c
 	$(CC) -o modifier.out modifier.c
