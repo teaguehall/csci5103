@@ -27,7 +27,7 @@ int main(int argc, char* argv[])
         throwError(0, "Consumer received invalid buffer size");
     }
 
-    #ifdef PRINT_DEBUG
+    #ifdef DEBUG_PRINT
     printf("Consumer started! buffer_size = %lu\n", buffer_size);
     #endif
     
@@ -44,18 +44,17 @@ int main(int argc, char* argv[])
         throwError(errno, "Failed to open SEMAPHORE_TODO_CONSUME semaphore");
     }
 
-    
     // allocate and map shared memory buffer
     int shmid = shmget(SHARED_MEM_BUFFER, buffer_size * sizeof(SharedMemItem), IPC_CREAT);
     if(shmid == -1)
     {
-        throwError(errno, "Failed to create shared memory object");
+        throwError(errno, "Consumer failed to open shared memory object");
     }
     
-    SharedMemItem* pbuffer = shmat(shmid, NULL, 0);
-    if(pbuffer == -1)
+    SharedMemItem* item_buffer = shmat(shmid, NULL, 0);
+    if(item_buffer == -1)
     {
-        throwError(errno, "Failed to map shared memory to address space");
+        throwError(errno, "Consumer failed to map shared memory to address space");
     }
 
     FILE* log = fopen("consumer.log", "w");
@@ -72,23 +71,23 @@ int main(int argc, char* argv[])
         // wait until items need consuming
         sem_wait(sem_todo_consume);
 
-        //// break out if EOS received
-        //if(strcmp(item_buffer[next_index_consumer].timestamp, "EOS") == 0)
-        //{
-        //    #ifdef DEBUG_PRINT 
-        //        printf("Consumer received EOS\n");
-        //    #endif
-//
-        //    break;
-        //}
+        // break out if EOS received
+        if(strcmp(item_buffer[next_index_consumer].timestamp, "EOS") == 0)
+        {
+            #ifdef DEBUG_PRINT 
+                printf("Consumer received EOS\n");
+            #endif
+
+            break;
+        }
 
         #ifdef DEBUG_PRINT 
             printf("Consumer received value = %u\n", item_buffer[next_index_consumer].id);
         #endif
 
-        //// log to file
-        //fprintf(log, "%d %s\n", item_buffer[next_index_consumer].id, item_buffer[next_index_consumer].timestamp);
-        //fflush(log);
+        // log to file
+        fprintf(log, "%d %s\n", item_buffer[next_index_consumer].id, item_buffer[next_index_consumer].timestamp);
+        fflush(log);
 
         // increment modifier item index (for next iteration)
         next_index_consumer++;

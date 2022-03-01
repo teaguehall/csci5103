@@ -33,7 +33,7 @@ int main(int argc, char* argv[])
         throwError(0, "Producer received invalid number of items to produce");
     }
 
-    #ifdef PRINT_DEBUG
+    #ifdef DEBUG_PRINT
     printf("Producer started! buffer_size = %lu, items_to_produce = %lu\n", buffer_size, items_to_produce);
     #endif
 
@@ -54,13 +54,13 @@ int main(int argc, char* argv[])
     int shmid = shmget(SHARED_MEM_BUFFER, buffer_size * sizeof(SharedMemItem), IPC_CREAT);
     if(shmid == -1)
     {
-        throwError(errno, "Failed to create shared memory object");
+        throwError(errno, "Producer failed to open shared memory");
     }
     
-    SharedMemItem* pbuffer = shmat(shmid, NULL, 0);
-    if(pbuffer == -1)
+    SharedMemItem* item_buffer = shmat(shmid, NULL, 0);
+    if(item_buffer == -1)
     {
-        throwError(errno, "Failed to map shared memory to address space");
+        throwError(errno, "Producer failed to map shared memory to address space");
     }
 
     struct timeval timestamp;
@@ -87,13 +87,17 @@ int main(int argc, char* argv[])
             throwError(errno, "Failed to retrieve timestamp");
         }
 
-        //// write data to item
-        //item_buffer[next_index_producer].id = i + 1; // add 1 so ID starts 1
-        //sprintf(item_buffer[next_index_producer].timestamp, "%ld-%ld", timestamp.tv_sec, timestamp.tv_usec);
+        // write data to item
+        item_buffer[next_index_producer].id = i + 1; // add 1 so ID starts 1
+        sprintf(item_buffer[next_index_producer].timestamp, "%ld-%ld", timestamp.tv_sec, timestamp.tv_usec);
 
-        //// log to file
-        //fprintf(log, "%d %s\n", item_buffer[next_index_producer].id, item_buffer[next_index_producer].timestamp);
-        //fflush(log);
+        // log to file
+        fprintf(log, "%d %s\n", item_buffer[next_index_producer].id, item_buffer[next_index_producer].timestamp);
+        fflush(log);
+
+        #ifdef DEBUG_PRINT
+            printf("Producer sent value = %u\n", item_buffer[next_index_producer].id);
+        #endif
 
         // increment buffer index for next produced items
         next_index_producer++;
@@ -108,11 +112,11 @@ int main(int argc, char* argv[])
 
     // send EOS signal
     sem_wait(sem_buffer_avail);
-    //sprintf(item_buffer[next_index_producer].timestamp, "EOS");
+    sprintf(item_buffer[next_index_producer].timestamp, "EOS");
     sem_post(sem_todo_modify);
 
     #ifdef DEBUG_PRINT
-        printf("Producer sent EOS");
+        printf("Producer sent EOS\n");
     #endif
 
     // close log file

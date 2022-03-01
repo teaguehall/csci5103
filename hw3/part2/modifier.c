@@ -27,7 +27,7 @@ int main(int argc, char* argv[])
         throwError(0, "Modifier received invalid buffer size");
     }
 
-    #ifdef PRINT_DEBUG
+    #ifdef DEBUG_PRINT
     printf("Modifier started! buffer_size = %lu\n", buffer_size);
     #endif
 
@@ -48,13 +48,13 @@ int main(int argc, char* argv[])
     int shmid = shmget(SHARED_MEM_BUFFER, buffer_size * sizeof(SharedMemItem), IPC_CREAT);
     if(shmid == -1)
     {
-        throwError(errno, "Failed to create shared memory object");
+        throwError(errno, "Consumer failed to open shared memory object");
     }
     
-    SharedMemItem* pbuffer = shmat(shmid, NULL, 0);
-    if(pbuffer == -1)
+    SharedMemItem* item_buffer = shmat(shmid, NULL, 0);
+    if(item_buffer == -1)
     {
-        throwError(errno, "Failed to map shared memory to address space");
+        throwError(errno, "Consumer failed to map shared memory to address space");
     }
 
     struct timeval timestamp;
@@ -67,30 +67,30 @@ int main(int argc, char* argv[])
         // wait until items need modifying
         sem_wait(sem_todo_modify);
 
-        //// break out if EOS received
-        //if(strcmp(item_buffer[next_index_modifier].timestamp, "EOS") == 0)
-        //{
-        //    #ifdef DEBUG_PRINT 
-        //        printf("Modifier received EOS\n");
-        //    #endif
-//
-        //    sem_post(&sem_todo_consume);
-        //    break;
-        //}
-//
-        //#ifdef DEBUG_PRINT
-        //    printf("Modifier received value = %u\n", item_buffer[next_index_modifier].id);
-        //#endif
-//
-        //// grab time of day
-        //if(gettimeofday(&timestamp, NULL) == -1)
-        //{
-        //    throwError(errno, "Failed to retrieve timestamp");
-        //}
-        //sprintf(timestamp_string, " %ld-%ld", timestamp.tv_sec, timestamp.tv_usec);
-//
-        //// append new timestamp to existing
-        //strcat(item_buffer[next_index_modifier].timestamp, timestamp_string);
+        // break out if EOS received
+        if(strcmp(item_buffer[next_index_modifier].timestamp, "EOS") == 0)
+        {
+            #ifdef DEBUG_PRINT 
+                printf("Modifier received EOS\n");
+            #endif
+
+            sem_post(sem_todo_consume);
+            break;
+        }
+
+        #ifdef DEBUG_PRINT
+            printf("Modifier received value = %u\n", item_buffer[next_index_modifier].id);
+        #endif
+
+        // grab time of day
+        if(gettimeofday(&timestamp, NULL) == -1)
+        {
+            throwError(errno, "Failed to retrieve timestamp");
+        }
+        sprintf(timestamp_string, " %ld-%ld", timestamp.tv_sec, timestamp.tv_usec);
+
+        // append new timestamp to existing
+        strcat(item_buffer[next_index_modifier].timestamp, timestamp_string);
 
         // increment modifier item index (for next iteration)
         next_index_modifier++;
