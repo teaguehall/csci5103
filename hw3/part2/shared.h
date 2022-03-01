@@ -6,23 +6,16 @@
 #include <stddef.h>
 #include <semaphore.h>
 
-#define SHARED_MEM_KEY 0x1A2B3C4D
+#define SEMAPHORE_BUFFER_AVAIL  "/sem_buffer_avail"
+#define SEMAPHORE_TODO_MODIFY   "/sem_todo_mdofiy"
+#define SEMAPHORE_TODO_CONSUME  "/sem_todo_consume"
+#define SHARED_MEM_BUFFER       0x4D3C2B1A
 
-typedef struct SharedInfo
+typedef struct SharedMemItem
 {
-    int debug;
-    size_t buffer_size;
-    size_t items_to_produce;
-    sem_t sem_buffer_avail;
-    sem_t sem_todo_modify;
-    sem_t sem_todo_consume;
-
-} SharedInfo;
-
-typedef struct SharedItem
-{
-
-}
+    int id;
+    char timestamp[128];
+} SharedMemItem;
 
 void throwError(int errnum, char* message)
 {

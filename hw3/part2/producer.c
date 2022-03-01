@@ -9,35 +9,114 @@
 #include <errno.h>
 #include <string.h>
 #include <sys/shm.h>
+#include <sys/time.h>
 #include "shared.h"
 
 int main(int argc, char* argv[])
 {
-    #ifdef PRINT_DEBUG
-    printf("Producer started\n");
-    #endif
-    
-    // get shared memory ID
-    int shmid = shmget(SHARED_MEM_KEY, sizeof(SharedMemObject), IPC_CREAT);
-    if(shmid == -1)
+    // confirm arguments present
+    if(argc < 3)
     {
-        throwError(errno, "Failed to retrieve shared memory ID (try issuing 'ipcrm -M 0x1A2B3C4D' to remove shared memory)");
+        throwError(0, "Producer received incorrect number of args");
     }
 
-    // map shared memory to address space
-    SharedMemObject* pshared = shmat(shmid, NULL, 0);
-    if(pshared == -1)
+    // parse args
+    size_t buffer_size = atoi(argv[1]);
+    if(buffer_size < 0)
+    {
+        throwError(0, "Producer received invalid buffer size");
+    }
+
+    size_t items_to_produce = atoi(argv[2]);
+    if(items_to_produce < 0)
+    {
+        throwError(0, "Producer received invalid number of items to produce");
+    }
+
+    #ifdef PRINT_DEBUG
+    printf("Producer started! buffer_size = %lu, items_to_produce = %lu\n", buffer_size, items_to_produce);
+    #endif
+
+    // open shared semaphores
+    sem_t* sem_buffer_avail = sem_open(SEMAPHORE_BUFFER_AVAIL, 0);
+    if(sem_buffer_avail == SEM_FAILED)
+    {
+        throwError(errno, "Failed to open SEMAPHORE_BUFFER_AVAIL semaphore");
+    }
+
+    sem_t* sem_todo_modify = sem_open(SEMAPHORE_TODO_MODIFY, 0);
+    if(sem_todo_modify == SEM_FAILED)
+    {
+        throwError(errno, "Failed to open SEMAPHORE_TODO_MODIFY semaphore");
+    }
+
+    // allocate and map shared memory buffer
+    int shmid = shmget(SHARED_MEM_BUFFER, buffer_size * sizeof(SharedMemItem), IPC_CREAT);
+    if(shmid == -1)
+    {
+        throwError(errno, "Failed to create shared memory object");
+    }
+    
+    SharedMemItem* pbuffer = shmat(shmid, NULL, 0);
+    if(pbuffer == -1)
     {
         throwError(errno, "Failed to map shared memory to address space");
     }
 
-    int debug = 0;
-    while(1)
+    struct timeval timestamp;
+    int next_index_producer = 0;
+    
+    // create log file
+    FILE* log = fopen("producer.log", "w");
+    if(log == NULL)
     {
-        printf("Producing = %d\n", debug++);
-        pshared->debug = debug;
-        sleep(1);
+        throwError(0, "Failed to create producer.log");
     }
+
+    // send produced items to buffer 
+    for(int i = 0; i < items_to_produce; i++)
+    {
+        sleep(1);
+        
+        // wait until available room in buffer for produced item
+        sem_wait(sem_buffer_avail);
+
+        // grab time of day
+        if(gettimeofday(&timestamp, NULL) == -1)
+        {
+            throwError(errno, "Failed to retrieve timestamp");
+        }
+
+        //// write data to item
+        //item_buffer[next_index_producer].id = i + 1; // add 1 so ID starts 1
+        //sprintf(item_buffer[next_index_producer].timestamp, "%ld-%ld", timestamp.tv_sec, timestamp.tv_usec);
+
+        //// log to file
+        //fprintf(log, "%d %s\n", item_buffer[next_index_producer].id, item_buffer[next_index_producer].timestamp);
+        //fflush(log);
+
+        // increment buffer index for next produced items
+        next_index_producer++;
+        if(next_index_producer >= buffer_size)
+        {
+            next_index_producer = 0;
+        }
+
+        // signal produced item to modifier
+        sem_post(sem_todo_modify);
+    }
+
+    // send EOS signal
+    sem_wait(sem_buffer_avail);
+    //sprintf(item_buffer[next_index_producer].timestamp, "EOS");
+    sem_post(sem_todo_modify);
+
+    #ifdef DEBUG_PRINT
+        printf("Producer sent EOS");
+    #endif
+
+    // close log file
+    fclose(log);
 
     return 0;
 }

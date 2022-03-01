@@ -2,10 +2,10 @@ CC=gcc
 CFLAGS=-I.
 
 main: prodcons.c producer.c modifier.c consumer.c shared.h
-	$(CC) -o prodcons.out prodcons.c
-	$(CC) -o producer.out producer.c
-	$(CC) -o modifier.out modifier.c
-	$(CC) -o consumer.out consumer.c
+	$(CC) -o prodcons.out prodcons.c -lpthread -D_REENTRANT
+	$(CC) -o producer.out producer.c -lpthread -D_REENTRANT
+	$(CC) -o modifier.out modifier.c -lpthread -D_REENTRANT
+	$(CC) -o consumer.out consumer.c -lpthread -D_REENTRANT
 
 clean:
 	rm -f prodcons.out

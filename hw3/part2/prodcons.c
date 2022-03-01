@@ -10,15 +10,14 @@
 #include <string.h>
 #include <sys/shm.h>
 #include "shared.h"
+#include <fcntl.h>
+#include <sys/stat.h>
+#include <semaphore.h>
 
 int main(int argc, char* argv[])
 {
-    pid_t pid_producer;
-    pid_t pid_modifier;
-    pid_t pid_consumer;
-
-    size_t max_items;
-    size_t produced_items = 1000;
+    size_t buffer_size; // items
+    size_t items_to_produce = 1000;
     
     // print error if invalid number of arguments specified
     if(argc < 2)
@@ -30,8 +29,8 @@ int main(int argc, char* argv[])
     }
 
     // read-in buffer size
-    max_items = atoi(argv[1]);
-    if(max_items <= 0)
+    buffer_size = atoi(argv[1]);
+    if(buffer_size <= 0)
     {
         throwError(0, "Invalid buffer size specified");
     }
@@ -39,46 +38,70 @@ int main(int argc, char* argv[])
     // read-in producer items(if specified)
     if(argc > 2)
     {
-        produced_items = atoi(argv[2]);
-        if(produced_items <= 0)
+        items_to_produce = atoi(argv[2]);
+        if(items_to_produce <= 0)
         {
             throwError(0, "Invalid number of producer items specified");
         }
     }
 
-    // allocate shared memory
-    int shmid = shmget(SHARED_MEM_KEY, sizeof(SharedMemObject), IPC_CREAT | 0666);
+    // convert args back to strings (will be fed to execls)
+    char str_buffer_size[128];
+    char str_items_to_produce[128];
+    sprintf(str_buffer_size, "%lu", buffer_size);
+    sprintf(str_items_to_produce, "%lu", items_to_produce);
+
+    // create shared semaphores
+    sem_t* sem_buffer_avail = sem_open(SEMAPHORE_BUFFER_AVAIL, O_CREAT, 0666, buffer_size);
+    if(sem_buffer_avail == SEM_FAILED)
+    {
+        throwError(errno, "Failed to create SEMAPHORE_BUFFER_AVAIL semaphore");
+    }
+
+    sem_t* sem_todo_modify = sem_open(SEMAPHORE_TODO_MODIFY, O_CREAT, 0666, 0);
+    if(sem_todo_modify == SEM_FAILED)
+    {
+        throwError(errno, "Failed to create SEMAPHORE_TODO_MODIFY semaphore");
+    }
+
+    sem_t* sem_todo_consume = sem_open(SEMAPHORE_TODO_CONSUME, O_CREAT, 0666, 0);
+    if(sem_todo_consume == SEM_FAILED)
+    {
+        throwError(errno, "Failed to create SEMAPHORE_TODO_CONSUME semaphore");
+    }
+
+    // allocate and map shared memory buffer
+    int shmid = shmget(SHARED_MEM_BUFFER, buffer_size * sizeof(SharedMemItem), IPC_CREAT | 0666);
     if(shmid == -1)
     {
         throwError(errno, "Failed to create shared memory object");
     }
     
-    // map shared memory to address space
-    SharedMemObject* pshared = shmat(shmid, NULL, 0);
-    if(pshared == -1)
+    SharedMemItem* pbuffer = shmat(shmid, NULL, 0);
+    if(pbuffer == -1)
     {
         throwError(errno, "Failed to map shared memory to address space");
     }
 
     // create producer
-    pid_producer = fork();
+    pid_t pid_producer = fork();
     if(pid_producer == 0)
     {
-        execl("producer.out", "producer.out", NULL);
+        execl("producer.out", "producer.out", str_buffer_size, str_items_to_produce, NULL);
     }
 
     // create modifier
-    pid_modifier = fork();
+    pid_t pid_modifier = fork();
     if(pid_modifier == 0)
     {
-        execl("modifier.out", "modifier.out", NULL);
+        execl("modifier.out", "modifier.out", str_buffer_size, NULL);
     }
 
     // create consumer
-    pid_consumer = fork();
+    pid_t pid_consumer = fork();
     if(pid_consumer == 0)
     {
-        execl("consumer.out", "consumer.out", NULL);
+        execl("consumer.out", "consumer.out", str_buffer_size, NULL);
     }
 
     // wait for child processes
