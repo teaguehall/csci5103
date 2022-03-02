@@ -13,6 +13,7 @@
 #include <fcntl.h>
 #include <sys/stat.h>
 #include <semaphore.h>
+#include <pthread.h>
 
 int main(int argc, char* argv[])
 {
@@ -51,30 +52,45 @@ int main(int argc, char* argv[])
     sprintf(str_buffer_size, "%lu", buffer_size);
     sprintf(str_items_to_produce, "%lu", items_to_produce);
 
-    //// check if shared memory segment already exists (if so, remove it)
-    //int shmid = shmget(SHARED_MEM_BUFFER, 1, 0);
-    //if(shmid != -1)
-    //{
-    //    #ifdef DEBUG_PRINT
-    //        printf("Found existing shared memory segment, removing...\n");
-    //    #endif
-    //    
-    //    // delete
-    //    if(shmctl(shmid, IPC_RMID, 0) == -1)
-    //    {
-    //        throwError(errno, "Failed to remove existing shared memory segment");
-    //    }
-    //}
+    // delete shared memory segment if one already exists for item buffer
+    int shmid_buffer = shmget(SHARED_MEM_BUFFER, 1, 0);
+    if(shmid_buffer != -1)
+    {
+        #ifdef DEBUG_PRINT
+            printf("Founding existing shared memory segment for item buffer, deleting it...\n");
+        #endif
+        
+        // delete
+        if(shmctl(shmid_buffer, IPC_RMID, 0) == -1)
+        {
+            throwError(errno, "Failed to remove existing shared memory segment for item buffer");
+        }
+    }
 
     // allocate shared memory for item buffer
-    int shmid_buffer = shmget(SHARED_MEM_BUFFER, buffer_size * sizeof(SharedMemItem), IPC_CREAT | 0666);
+    shmid_buffer = shmget(SHARED_MEM_BUFFER, buffer_size * sizeof(SharedMemItem), IPC_CREAT | 0666);
     if(shmid_buffer == -1)
     {
         throwError(errno, "Failed to create shared memory for item buffer");
     }
 
+    // delete shared memory segment if one already exists for semaphores
+    int shmid_semaphores = shmget(SHARED_MEM_SEMAPHORES, 1, 0);
+    if(shmid_semaphores != -1)
+    {
+        #ifdef DEBUG_PRINT
+            printf("Founding existing shared memory segment for semaphores, deleting it...\n");
+        #endif
+        
+        // delete
+        if(shmctl(shmid_semaphores, IPC_RMID, 0) == -1)
+        {
+            throwError(errno, "Failed to remove existing shared memory segment for semaphores");
+        }
+    }
+
     // allocate shared memory for semaphores
-    int shmid_semaphores = shmget(SHARED_MEM_SEMAPHORES, sizeof(SharedMemSemaphores), IPC_CREAT | 0666);
+    shmid_semaphores = shmget(SHARED_MEM_SEMAPHORES, sizeof(SharedMemSemaphores), IPC_CREAT | 0666);
     if(shmid_semaphores == -1)
     {
         throwError(errno, "Failed to create shared memory for semaphores");
@@ -88,9 +104,9 @@ int main(int argc, char* argv[])
     }
 
     // initialize semaphores
-    sem_init(&semaphores->sem_buffer_avail, 1, buffer_size);
-    sem_init(&semaphores->sem_todo_modify, 1, 0);
-    sem_init(&semaphores->sem_todo_consume, 1, 0);
+    sem_init(&semaphores->sem_buffer_avail, PTHREAD_PROCESS_SHARED, buffer_size);
+    sem_init(&semaphores->sem_todo_modify, PTHREAD_PROCESS_SHARED, 0);
+    sem_init(&semaphores->sem_todo_consume, PTHREAD_PROCESS_SHARED, 0);
 
     // detatch semaphore reference from shared memory
     shmdt(semaphores);
@@ -117,9 +133,9 @@ int main(int argc, char* argv[])
     }
 
     // wait for child processes
-    waitpid(pid_producer, NULL, 0); printf("Producer finished\n");
-    waitpid(pid_modifier, NULL, 0); printf("Modifier finished\n");
-    waitpid(pid_consumer, NULL, 0); printf("Consumer finished\n");
+    waitpid(pid_producer, NULL, 0); //printf("Producer finished\n");
+    waitpid(pid_modifier, NULL, 0); //printf("Modifier finished\n");
+    waitpid(pid_consumer, NULL, 0); //printf("Consumer finished\n");
 
     // remove shared memory
     if(shmctl(shmid_buffer, IPC_RMID, 0) == -1)
@@ -131,6 +147,14 @@ int main(int argc, char* argv[])
     {
         throwError(errno, "Failed to remove semaphores shared memory");
     }
+
+    printf("--------------------------------\n");
+    printf("|           SUCCESS             \n");
+    printf("--------------------------------\n");
+    printf("Buffer Size: %lu\n", buffer_size);
+    printf("Produced Items: %lu\n", items_to_produce);
+    printf("Log files outputted locally\n");
+    printf("--------------------------------\n");
 
     return 0;
 }

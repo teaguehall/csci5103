@@ -1,7 +1,7 @@
 #ifndef SHARED_H
 #define SHARED_H
 
-#define DEBUG_PRINT
+//#define DEBUG_PRINT
 
 #include <stddef.h>
 #include <semaphore.h>
