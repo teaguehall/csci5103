@@ -1,3 +1,10 @@
+// Student ID: hall1945
+// Name: Teague Hall
+// Course: CSCI5103 Operating Systems
+// Assignment #3 Part 1
+// Tested On: csel-kh1260-01.cselabs.umn.edu
+// Description: Multithreaded (single process) solution for producer/consumer/modifier problem
+
 #include <stdlib.h>
 #include <unistd.h>
 #include <stdio.h>
@@ -173,6 +180,8 @@ void* routineProducer(void* vargp)
 
     // close log file
     fclose(log);
+
+    pthread_exit(NULL);
 }
 
 void* routineModifier(void* vargp)
@@ -221,6 +230,8 @@ void* routineModifier(void* vargp)
         // signal to consumer
         sem_post(&sem_todo_consume);
     }
+
+    pthread_exit(NULL);
 }
 
 void* routineConsumer(void* vargp)
@@ -269,4 +280,6 @@ void* routineConsumer(void* vargp)
 
     // close log file
     fclose(log);
+
+    pthread_exit(NULL);
 }

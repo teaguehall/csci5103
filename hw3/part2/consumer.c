@@ -1,3 +1,10 @@
+// Student ID: hall1945
+// Name: Teague Hall
+// Course: CSCI5103 Operating Systems
+// Assignment #3 Part 2
+// Tested On: csel-kh1260-01.cselabs.umn.edu
+// Description: Consumer process
+
 #include <stdio.h>
 #include <sys/types.h>
 #include <sys/ipc.h>
