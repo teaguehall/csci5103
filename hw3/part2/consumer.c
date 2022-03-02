@@ -31,30 +31,43 @@ int main(int argc, char* argv[])
     printf("Consumer started! buffer_size = %lu\n", buffer_size);
     #endif
     
-    // open shared semaphores
-    sem_t* sem_buffer_avail = sem_open(SEMAPHORE_BUFFER_AVAIL, 0);
-    if(sem_buffer_avail == SEM_FAILED)
-    {
-        throwError(errno, "Failed to open SEMAPHORE_BUFFER_AVAIL semaphore");
-    }
+    //// open shared semaphores
+    //sem_t* sem_buffer_avail = sem_open(SEMAPHORE_BUFFER_AVAIL, 0);
+    //if(sem_buffer_avail == SEM_FAILED)
+    //{
+    //    throwError(errno, "Failed to open SEMAPHORE_BUFFER_AVAIL semaphore");
+    //}
+    //
+    //sem_t* sem_todo_consume = sem_open(SEMAPHORE_TODO_CONSUME, 0);
+    //if(sem_todo_consume == SEM_FAILED)
+    //{
+    //    throwError(errno, "Failed to open SEMAPHORE_TODO_CONSUME semaphore");
+    //}
 
-    sem_t* sem_todo_consume = sem_open(SEMAPHORE_TODO_CONSUME, 0);
-    if(sem_todo_consume == SEM_FAILED)
+    // get shared-memory ID of item buffer and map to address space
+    int shmid_buffer = shmget(SHARED_MEM_BUFFER, buffer_size * sizeof(SharedMemItem), IPC_CREAT);
+    if(shmid_buffer == -1)
     {
-        throwError(errno, "Failed to open SEMAPHORE_TODO_CONSUME semaphore");
-    }
-
-    // allocate and map shared memory buffer
-    int shmid = shmget(SHARED_MEM_BUFFER, buffer_size * sizeof(SharedMemItem), IPC_CREAT);
-    if(shmid == -1)
-    {
-        throwError(errno, "Consumer failed to open shared memory object");
+        throwError(errno, "Consumer failed to get item buffer shared memory");
     }
     
-    SharedMemItem* item_buffer = shmat(shmid, NULL, 0);
+    SharedMemItem* item_buffer = shmat(shmid_buffer, NULL, 0);
     if(item_buffer == (void*)-1)
     {
-        throwError(errno, "Consumer failed to map shared memory to address space");
+        throwError(errno, "Consumer failed to map shared memory item buffer to address space");
+    }
+
+    // get shared-memory ID of semaphores and map to address space
+    int shmid_semaphores = shmget(SHARED_MEM_SEMAPHORES, sizeof(SharedMemSemaphores), IPC_CREAT | 0666);
+    if(shmid_semaphores == -1)
+    {
+        throwError(errno, "Consumer failed to get semaphores shared memory");
+    }
+
+    SharedMemSemaphores* semaphores = shmat(shmid_semaphores, NULL, 0);
+    if(semaphores == (void*)-1)
+    {
+        throwError(errno, "Consumer failed to map shared memory semaphores to address space");
     }
 
     FILE* log = fopen("consumer.log", "w");
@@ -69,7 +82,7 @@ int main(int argc, char* argv[])
     while(1)
     {
         // wait until items need consuming
-        sem_wait(sem_todo_consume);
+        sem_wait(&semaphores->sem_todo_consume);
 
         // break out if EOS received
         if(strcmp(item_buffer[next_index_consumer].timestamp, "EOS") == 0)
@@ -97,18 +110,19 @@ int main(int argc, char* argv[])
         }
 
         // signal opening in buffer
-        sem_post(sem_buffer_avail);
+        sem_post(&semaphores->sem_buffer_avail);
     }
 
     // detatch shared memory
     if(shmdt(item_buffer) == -1)
     {
-        throwError(errno, "Consumer failed to detatch shared memory");
+        throwError(errno, "Consumer failed to detatch item buffer shared memory");
     }
 
-    // open shared semaphores
-    sem_close(sem_buffer_avail);
-    sem_close(sem_todo_consume);
+    if(shmdt(semaphores) == -1)
+    {
+        throwError(errno, "Consumer failed to detatch semaphores shared memory");
+    }
 
     // close log file
     fclose(log);

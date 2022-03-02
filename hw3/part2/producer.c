@@ -37,30 +37,30 @@ int main(int argc, char* argv[])
     printf("Producer started! buffer_size = %lu, items_to_produce = %lu\n", buffer_size, items_to_produce);
     #endif
 
-    // open shared semaphores
-    sem_t* sem_buffer_avail = sem_open(SEMAPHORE_BUFFER_AVAIL, 0);
-    if(sem_buffer_avail == SEM_FAILED)
+    // get shared-memory ID of item buffer and map to address space
+    int shmid_buffer = shmget(SHARED_MEM_BUFFER, buffer_size * sizeof(SharedMemItem), IPC_CREAT);
+    if(shmid_buffer == -1)
     {
-        throwError(errno, "Failed to open SEMAPHORE_BUFFER_AVAIL semaphore");
-    }
-
-    sem_t* sem_todo_modify = sem_open(SEMAPHORE_TODO_MODIFY, 0);
-    if(sem_todo_modify == SEM_FAILED)
-    {
-        throwError(errno, "Failed to open SEMAPHORE_TODO_MODIFY semaphore");
-    }
-
-    // allocate and map shared memory buffer
-    int shmid = shmget(SHARED_MEM_BUFFER, buffer_size * sizeof(SharedMemItem), IPC_CREAT);
-    if(shmid == -1)
-    {
-        throwError(errno, "Producer failed to open shared memory");
+        throwError(errno, "Producer failed to get item buffer shared memory");
     }
     
-    SharedMemItem* item_buffer = shmat(shmid, NULL, 0);
+    SharedMemItem* item_buffer = shmat(shmid_buffer, NULL, 0);
     if(item_buffer == (void*)-1)
     {
-        throwError(errno, "Producer failed to map shared memory to address space");
+        throwError(errno, "Producer failed to map shared memory item buffer to address space");
+    }
+
+    // get shared-memory ID of semaphores and map to address space
+    int shmid_semaphores = shmget(SHARED_MEM_SEMAPHORES, sizeof(SharedMemSemaphores), IPC_CREAT | 0666);
+    if(shmid_semaphores == -1)
+    {
+        throwError(errno, "Producer failed to get semaphores shared memory");
+    }
+
+    SharedMemSemaphores* semaphores = shmat(shmid_semaphores, NULL, 0);
+    if(semaphores == (void*)-1)
+    {
+        throwError(errno, "Producer failed to map shared memory semaphores to address space");
     }
 
     struct timeval timestamp;
@@ -79,7 +79,7 @@ int main(int argc, char* argv[])
         //sleep(1);
         
         // wait until available room in buffer for produced item
-        sem_wait(sem_buffer_avail);
+        sem_wait(&semaphores->sem_buffer_avail);
 
         // grab time of day
         if(gettimeofday(&timestamp, NULL) == -1)
@@ -107,13 +107,13 @@ int main(int argc, char* argv[])
         }
 
         // signal produced item to modifier
-        sem_post(sem_todo_modify);
+        sem_post(&semaphores->sem_todo_modify);
     }
 
     // send EOS signal
-    sem_wait(sem_buffer_avail);
+    sem_wait(&semaphores->sem_buffer_avail);
     sprintf(item_buffer[next_index_producer].timestamp, "EOS");
-    sem_post(sem_todo_modify);
+    sem_post(&semaphores->sem_todo_modify);
 
     #ifdef DEBUG_PRINT
         printf("Producer sent EOS\n");
@@ -122,12 +122,13 @@ int main(int argc, char* argv[])
     // detatch shared memory
     if(shmdt(item_buffer) == -1)
     {
-        throwError(errno, "Producer failed to detatch shared memory");
+        throwError(errno, "Producer failed to detatch item buffer shared memory");
     }
 
-    // open shared semaphores
-    sem_close(sem_buffer_avail);
-    sem_close(sem_todo_modify);
+    if(shmdt(semaphores) == -1)
+    {
+        throwError(errno, "Producer failed to detatch semaphores shared memory");
+    }
 
     // close log file
     fclose(log);
