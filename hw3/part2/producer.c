@@ -58,7 +58,7 @@ int main(int argc, char* argv[])
     }
     
     SharedMemItem* item_buffer = shmat(shmid, NULL, 0);
-    if(item_buffer == -1)
+    if(item_buffer == (void*)-1)
     {
         throwError(errno, "Producer failed to map shared memory to address space");
     }
@@ -76,7 +76,7 @@ int main(int argc, char* argv[])
     // send produced items to buffer 
     for(int i = 0; i < items_to_produce; i++)
     {
-        sleep(1);
+        //sleep(1);
         
         // wait until available room in buffer for produced item
         sem_wait(sem_buffer_avail);
@@ -118,6 +118,16 @@ int main(int argc, char* argv[])
     #ifdef DEBUG_PRINT
         printf("Producer sent EOS\n");
     #endif
+
+    // detatch shared memory
+    if(shmdt(item_buffer) == -1)
+    {
+        throwError(errno, "Producer failed to detatch shared memory");
+    }
+
+    // open shared semaphores
+    sem_close(sem_buffer_avail);
+    sem_close(sem_todo_modify);
 
     // close log file
     fclose(log);

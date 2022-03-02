@@ -51,7 +51,29 @@ int main(int argc, char* argv[])
     sprintf(str_buffer_size, "%lu", buffer_size);
     sprintf(str_items_to_produce, "%lu", items_to_produce);
 
-    // create shared semaphores
+    // check if shared memory segment already exists (if so, remove it)
+    int shmid = shmget(SHARED_MEM_BUFFER, 1, 0);
+    if(shmid != -1)
+    {
+        #ifdef DEBUG_PRINT
+            printf("Found existing shared memory segment, removing...\n");
+        #endif
+        
+        // delete
+        if(shmctl(shmid, IPC_RMID, 0) == -1)
+        {
+            throwError(errno, "Failed to remove existing shared memory segment");
+        }
+    }
+
+    // allocate and map shared memory buffer
+    shmid = shmget(SHARED_MEM_BUFFER, buffer_size * sizeof(SharedMemItem), IPC_CREAT | 0666);
+    if(shmid == -1)
+    {
+        throwError(errno, "Failed to create shared memory object");
+    }
+
+     // create shared semaphores
     sem_t* sem_buffer_avail = sem_open(SEMAPHORE_BUFFER_AVAIL, O_CREAT, 0666, buffer_size);
     if(sem_buffer_avail == SEM_FAILED)
     {
@@ -68,19 +90,6 @@ int main(int argc, char* argv[])
     if(sem_todo_consume == SEM_FAILED)
     {
         throwError(errno, "Failed to create SEMAPHORE_TODO_CONSUME semaphore");
-    }
-
-    // allocate and map shared memory buffer
-    int shmid = shmget(SHARED_MEM_BUFFER, buffer_size * sizeof(SharedMemItem), IPC_CREAT | 0666);
-    if(shmid == -1)
-    {
-        throwError(errno, "Failed to create shared memory object");
-    }
-    
-    SharedMemItem* pbuffer = shmat(shmid, NULL, 0);
-    if(pbuffer == -1)
-    {
-        throwError(errno, "Failed to map shared memory to address space");
     }
 
     // create producer
@@ -108,6 +117,12 @@ int main(int argc, char* argv[])
     waitpid(pid_producer, NULL, 0); printf("Producer finished\n");
     waitpid(pid_modifier, NULL, 0); printf("Modifier finished\n");
     waitpid(pid_consumer, NULL, 0); printf("Consumer finished\n");
+
+    // remove shared memory
+    if(shmctl(shmid, IPC_RMID, 0) == -1)
+    {
+        throwError(errno, "Failed to remove shared memory");
+    }
 
     return 0;
 }

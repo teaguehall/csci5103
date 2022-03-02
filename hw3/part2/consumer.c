@@ -52,7 +52,7 @@ int main(int argc, char* argv[])
     }
     
     SharedMemItem* item_buffer = shmat(shmid, NULL, 0);
-    if(item_buffer == -1)
+    if(item_buffer == (void*)-1)
     {
         throwError(errno, "Consumer failed to map shared memory to address space");
     }
@@ -99,6 +99,16 @@ int main(int argc, char* argv[])
         // signal opening in buffer
         sem_post(sem_buffer_avail);
     }
+
+    // detatch shared memory
+    if(shmdt(item_buffer) == -1)
+    {
+        throwError(errno, "Consumer failed to detatch shared memory");
+    }
+
+    // open shared semaphores
+    sem_close(sem_buffer_avail);
+    sem_close(sem_todo_consume);
 
     // close log file
     fclose(log);
