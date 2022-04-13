@@ -32,6 +32,7 @@ __attribute__((section("__versions"))) = {
 	{ 0xd1e8c1b8, __VMLINUX_SYMBOL_STR(down_interruptible) },
 	{ 0x7485e15e, __VMLINUX_SYMBOL_STR(unregister_chrdev_region) },
 	{ 0x1f1b22bc, __VMLINUX_SYMBOL_STR(nonseekable_open) },
+	{ 0xb44ad4b3, __VMLINUX_SYMBOL_STR(_copy_to_user) },
 	{ 0xfb578fc5, __VMLINUX_SYMBOL_STR(memset) },
 	{ 0x27e1a049, __VMLINUX_SYMBOL_STR(printk) },
 	{ 0x8eaaada1, __VMLINUX_SYMBOL_STR(cdev_add) },
@@ -50,4 +51,4 @@ __attribute__((section(".modinfo"))) =
 "depends=";
 
 
-MODULE_INFO(srcversion, "0C8B4962B36F0D7861F0EE2");
+MODULE_INFO(srcversion, "BD5E6CB70F33B47AAE79BDE");

@@ -109,7 +109,7 @@ static int scull_b_open(struct inode *inode, struct file *filp)
 	// release mutex
 	up(&dev->sem);
 	
-	// TODO - FINISH IMPLEMENTING
+	// TODO - FINISH IMPLEMENTING?
 
 	return nonseekable_open(inode, filp);
 }
@@ -210,14 +210,44 @@ static ssize_t scull_b_write(struct file *filp, const char __user *buf, size_t c
 // read handler
 static ssize_t scull_b_read(struct file *filp, char __user *buf, size_t count, loff_t *f_pos)
 {
-
-	//struct scull_buffer *dev ;
-
-	// IMPLEMENT THIS FUNCTION
-	//
-
-	return 0;
-
+	struct scull_buffer *dev = filp->private_data;
+	
+	// grab mutex
+	if(down_interruptible(&dev->sem))
+		return -1;
+	
+	// wait for producers
+	if(dev->itemcount == 0)
+	{
+		if(dev->nwriters) // sleep if producers are opened
+		{
+			// TODO sleep
+		}
+		else // otherwise release mutex and exit
+		{
+			up(&dev->sem);
+			return 0;
+		}
+	}
+	
+	// copy item from buffer and decrement item count
+	copy_to_user(buf, dev->rp, SCULL_B_ITEM_SIZE);
+	dev->itemcount--;
+	
+	#ifdef DEBUG_PRINT 
+	printk(KERN_ALERT "Removed item. Item count = %d\n", dev->itemcount);
+	#endif
+	
+	// increment read pointer (roll-over if necessary).
+	dev->rp += SCULL_B_ITEM_SIZE;
+	if(dev->rp >= dev->end)
+	{
+		dev->rp = dev->buffer;
+	}
+	
+	// success (release mutex and return number of bytes written)
+	up(&dev->sem);
+	return SCULL_B_ITEM_SIZE;
 } 
 
 /*
