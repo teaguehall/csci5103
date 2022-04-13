@@ -1,0 +1,1 @@
+cmd_/home/student/hw5/scullbuffer.ko := ld -r -m elf_x86_64 -z max-page-size=0x200000 -T ./scripts/module-common.lds --build-id  -o /home/student/hw5/scullbuffer.ko /home/student/hw5/scullbuffer.o /home/student/hw5/scullbuffer.mod.o ;  true
