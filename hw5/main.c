@@ -13,7 +13,7 @@
  * we cannot take responsibility for errors or fitness for use.
  *
  */
-
+ 
 #include <linux/sched.h>
 
 #include <linux/configfs.h>
@@ -34,6 +34,8 @@
 #include <linux/uaccess.h>	/* copy_*_user */
 #include <linux/sched/signal.h>
 #include "scullbuffer.h"	/* local definitions */
+
+#define DEBUG_PRINT
 
 /*
  * Our parameters which can be set at load time.
@@ -78,18 +80,75 @@ MODULE_LICENSE("Dual BSD/GPL");
 static int scull_b_open(struct inode *inode, struct file *filp)
 {
 	struct scull_buffer *dev;
-        
-	// IMPLEMENT THIS FUNCTION 
+	
+	dev = container_of(inode->i_cdev, struct scull_buffer, cdev);
+	filp->private_data = dev; /* for other methods */
+	
+	
+	// grab mutex
+	if(down_interruptible(&dev->sem))
+		return -ERESTARTSYS;
+	
+	if((filp->f_flags & O_ACCMODE) == O_WRONLY)
+	{
+		dev->nwriters++;
+		
+		#ifdef DEBUG_PRINT 
+		printk(KERN_ALERT "Writer opened. Writer count = %d\n", dev->nwriters);
+		#endif
+	}
+	else if((filp->f_flags & O_ACCMODE) == O_RDONLY)
+	{
+		dev->nreaders++;
+		
+		#ifdef DEBUG_PRINT 
+		printk(KERN_ALERT "Reader opened. Reader count = %d\n", dev->nreaders);
+		#endif
+	}
+	
+	// release mutex
+	up(&dev->sem);
+	
+	// TODO - FINISH IMPLEMENTING
 
 	return nonseekable_open(inode, filp);
 }
 
 static int scull_b_release(struct inode *inode, struct file *filp)
 {
-	struct scull_buffer *dev ;
+	struct scull_buffer *dev; //  = filp->private_data;
 
+	dev = container_of(inode->i_cdev, struct scull_buffer, cdev);
+	filp->private_data = dev; /* for other methods */
+	
+	// grab mutex
+	if(down_interruptible(&dev->sem))
+		return -ERESTARTSYS;
+	
+	if((filp->f_flags & O_ACCMODE) == O_WRONLY)
+	{
+		dev->nwriters--;
+		
+		#ifdef DEBUG_PRINT 
+		printk(KERN_ALERT "Writer released. Writer count = %d\n", dev->nwriters);
+		#endif
+	}
+	else if((filp->f_flags & O_ACCMODE) == O_RDONLY)
+	{
+		dev->nreaders--;
+		
+		#ifdef DEBUG_PRINT 
+		printk(KERN_ALERT "Reader released. Reader count = %d\n", dev->nreaders);
+		#endif
+	}
+	
+	// release mutex
+	up(&dev->sem);
+	
+	// TODO - actually implement this.
 	// IMPLEMENT THIS FUNCTION 
 	//
+	
 	return 0;
 }
 
@@ -99,7 +158,7 @@ static int scull_b_release(struct inode *inode, struct file *filp)
 static ssize_t scull_b_read(struct file *filp, char __user *buf, size_t count, loff_t *f_pos)
 {
 
-	struct scull_buffer *dev ;
+	//struct scull_buffer *dev ;
 
 	// IMPLEMENT THIS FUNCTION
 	//
@@ -109,7 +168,7 @@ static ssize_t scull_b_read(struct file *filp, char __user *buf, size_t count, l
 } 
 static ssize_t scull_b_write(struct file *filp, const char __user *buf, size_t count, loff_t *f_pos)
 {
-	struct scull_buffer *dev; 
+	//struct scull_buffer *dev; 
 
 	// IMPLEMENT THIS FUNCTION
 	//
