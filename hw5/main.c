@@ -152,9 +152,62 @@ static int scull_b_release(struct inode *inode, struct file *filp)
 	return 0;
 }
 
-/*
- * Data management: read and write
-*/
+// write handler
+static ssize_t scull_b_write(struct file *filp, const char __user *buf, size_t count, loff_t *f_pos)
+{
+	struct scull_buffer *dev = filp->private_data;
+	size_t clamped_count;
+	
+	// grab mutex
+	if(down_interruptible(&dev->sem))
+		return -1;
+	
+	// take action if item buffer is full
+	if(dev->itemcount >= dev->buffersize)
+	{
+		if(dev->nreaders) // sleep if readers are opened
+		{
+			// TODO sleep
+		}
+		else // otherwise release mutex and exit
+		{
+			up(&dev->sem);
+			return 0;
+		}
+	}
+
+	// clamp byte count (to make sure it fits within slot size)
+	if(count > SCULL_B_ITEM_SIZE)
+	{
+		clamped_count = SCULL_B_ITEM_SIZE;
+	}
+	else
+	{
+		clamped_count = count;
+	}
+	
+	// copy item to buffer and increment item count
+	copy_from_user(dev->wp, buf, clamped_count);
+	dev->itemcount++;
+	
+	#ifdef DEBUG_PRINT 
+	printk(KERN_ALERT "Added item. Item count = %d\n", dev->itemcount);
+	#endif
+	
+	// increment write pointer (roll-over if necessary).
+	dev->wp += SCULL_B_ITEM_SIZE;
+	if(dev->wp >= dev->end)
+	{
+		dev->wp = dev->buffer;
+	}
+	
+	// success (release mutex and return number of bytes written)
+	up(&dev->sem);
+	return clamped_count;
+	
+}
+
+// read handler
 static ssize_t scull_b_read(struct file *filp, char __user *buf, size_t count, loff_t *f_pos)
 {
 
@@ -166,15 +219,6 @@ static ssize_t scull_b_read(struct file *filp, char __user *buf, size_t count, l
 	return 0;
 
 } 
-static ssize_t scull_b_write(struct file *filp, const char __user *buf, size_t count, loff_t *f_pos)
-{
-	//struct scull_buffer *dev; 
-
-	// IMPLEMENT THIS FUNCTION
-	//
-
-	return 0;
-}
 
 /*
  * The file operations for the buffer device
@@ -188,8 +232,6 @@ struct file_operations scull_buffer_fops = {
 	.open =		scull_b_open,
 	.release =	scull_b_release,
 };
-
-
 
 
 /*
@@ -220,8 +262,6 @@ void scull_b_cleanup_module(void)
 		kfree(scull_b_buffers);
 	}
 	
-	
-
 	// unregister device
 	unregister_chrdev_region(devno, scull_b_nr_devs);
 }
@@ -284,10 +324,11 @@ int scull_b_init_module(void)
 		
 	// initialize each device
 	for (i = 0; i < scull_b_nr_devs; i++) {
+		// TODO
 		// scull_b_devices[i].inq 
 		// scull_b_devices[i].outq
 		scull_b_devices[i].buffer = scull_b_buffers + i * NITEMS * SCULL_B_ITEM_SIZE;
-		// scull_b_devices[i].end ... is this necessary if we know the buffer size?
+		scull_b_devices[i].end = scull_b_devices[i].buffer + NITEMS * SCULL_B_ITEM_SIZE;
 		scull_b_devices[i].buffersize = NITEMS;
 		scull_b_devices[i].rp = scull_b_devices[i].buffer;
 		scull_b_devices[i].wp = scull_b_devices[i].buffer;
