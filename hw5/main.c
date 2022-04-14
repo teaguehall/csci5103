@@ -35,7 +35,7 @@
 #include <linux/sched/signal.h>
 #include "scullbuffer.h"	/* local definitions */
 
-#define DEBUG_PRINT
+//#define DEBUG_PRINT
 
 /*
  * Our parameters which can be set at load time.
@@ -227,6 +227,8 @@ static ssize_t scull_b_write(struct file *filp, const char __user *buf, size_t c
 		// acquire mutex again
 		if(down_interruptible(&dev->sem))
 			return -1;
+		
+		// TODO - add special case.
 	}
 
 	// clamp byte count (to make sure it fits within slot size)
