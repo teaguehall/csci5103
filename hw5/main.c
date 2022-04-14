@@ -84,7 +84,6 @@ static int scull_b_open(struct inode *inode, struct file *filp)
 	dev = container_of(inode->i_cdev, struct scull_buffer, cdev);
 	filp->private_data = dev; /* for other methods */
 	
-	
 	// grab mutex
 	if(down_interruptible(&dev->sem))
 		return -ERESTARTSYS;
@@ -109,8 +108,6 @@ static int scull_b_open(struct inode *inode, struct file *filp)
 	// release mutex
 	up(&dev->sem);
 	
-	// TODO - FINISH IMPLEMENTING?
-
 	return nonseekable_open(inode, filp);
 }
 
@@ -167,7 +164,8 @@ static ssize_t scull_b_write(struct file *filp, const char __user *buf, size_t c
 	{
 		if(dev->nreaders) // sleep if readers are opened
 		{
-			// TODO sleep
+			// TODO
+			//wait_event_interruptible(dev->inq, condition)
 		}
 		else // otherwise release mutex and exit
 		{
@@ -263,7 +261,6 @@ struct file_operations scull_buffer_fops = {
 	.release =	scull_b_release,
 };
 
-
 /*
  * The cleanup function is used to handle initialization failures as well.
  * Thefore, it must be careful to work correctly even if some of the items
@@ -354,9 +351,8 @@ int scull_b_init_module(void)
 		
 	// initialize each device
 	for (i = 0; i < scull_b_nr_devs; i++) {
-		// TODO
-		// scull_b_devices[i].inq 
-		// scull_b_devices[i].outq
+		init_waitqueue_head(&(scull_b_devices[i].inq));
+		init_waitqueue_head(&(scull_b_devices[i].outq));
 		scull_b_devices[i].buffer = scull_b_buffers + i * NITEMS * SCULL_B_ITEM_SIZE;
 		scull_b_devices[i].end = scull_b_devices[i].buffer + NITEMS * SCULL_B_ITEM_SIZE;
 		scull_b_devices[i].buffersize = NITEMS;
