@@ -35,7 +35,7 @@
 #include <linux/sched/signal.h>
 #include "scullbuffer.h"	/* local definitions */
 
-#define DEBUG_PRINT
+//#define DEBUG_PRINT
 
 /*
  * Our parameters which can be set at load time.
@@ -284,8 +284,10 @@ void scull_b_cleanup_module(void)
 	int i;
 	dev_t devno = MKDEV(scull_major, scull_minor);
 	
+	#ifdef DEBUG_PRINT 
 	printk(KERN_ALERT "Unloading %u scull buffers\n", scull_b_nr_devs);
-
+	#endif
+	
 	// free scull devices
 	if (scull_b_devices) 
 	{
@@ -325,7 +327,9 @@ int scull_b_init_module(void)
 	int i, result;
 	dev_t devno;
 	
+	#ifdef DEBUG_PRINT 
 	printk(KERN_ALERT "Loading %u scull buffers\n", scull_b_nr_devs);
+	#endif
 	
 	// if major number specified, try to register it
 	if (scull_major)
