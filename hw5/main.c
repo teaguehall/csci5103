@@ -35,7 +35,7 @@
 #include <linux/sched/signal.h>
 #include "scullbuffer.h"	/* local definitions */
 
-//#define DEBUG_PRINT
+#define DEBUG_PRINT
 
 /*
  * Our parameters which can be set at load time.
@@ -88,22 +88,53 @@ static int scull_b_open(struct inode *inode, struct file *filp)
 	if(down_interruptible(&dev->sem))
 		return -ERESTARTSYS;
 	
-	if((filp->f_flags & O_ACCMODE) == O_WRONLY)
+	if((filp->f_flags & O_ACCMODE) == O_WRONLY) // producer
 	{
+		#ifdef DEBUG_PRINT 
+		printk(KERN_ALERT "Writer opened device. ");
+		#endif
+		
+		// allocate buffer memory if currently null
+		if(!dev->buffer)
+		{
+			#ifdef DEBUG_PRINT 
+			printk(KERN_ALERT "Allocating buffer memory for %d items\n", NITEMS);
+			#endif
+			
+			// grab memory
+			dev->buffer = kmalloc(NITEMS * SCULL_B_ITEM_SIZE, GFP_KERNEL);
+			if (!dev->buffer)
+			{
+				// release mutex and indicate failure
+				up(&dev->sem);
+				return -1;
+			}
+			
+			// update end of buffer
+			dev->end = dev->buffer + dev->buffersize * SCULL_B_ITEM_SIZE;
+			
+			// update read/write pointers
+			dev->rp = dev->buffer;
+			dev->wp = dev->buffer;
+			
+			// init item count to zero
+			dev->itemcount = 0;
+		}
+		
 		dev->nwriters++;
-		
-		#ifdef DEBUG_PRINT 
-		printk(KERN_ALERT "Writer opened. Writer count = %d\n", dev->nwriters);
-		#endif
 	}
-	else if((filp->f_flags & O_ACCMODE) == O_RDONLY)
+	else if((filp->f_flags & O_ACCMODE) == O_RDONLY) // consumer
 	{
-		dev->nreaders++;
-		
 		#ifdef DEBUG_PRINT 
-		printk(KERN_ALERT "Reader opened. Reader count = %d\n", dev->nreaders);
+		printk(KERN_ALERT "Reader opened device. ");
 		#endif
+		
+		dev->nreaders++;
 	}
+	
+	#ifdef DEBUG_PRINT 
+	printk(KERN_ALERT "Writer count = %d, Reader count = %d\n", dev->nwriters, dev->nreaders);
+	#endif
 	
 	// release mutex
 	up(&dev->sem);
@@ -124,27 +155,42 @@ static int scull_b_release(struct inode *inode, struct file *filp)
 	
 	if((filp->f_flags & O_ACCMODE) == O_WRONLY)
 	{
-		dev->nwriters--;
-		
 		#ifdef DEBUG_PRINT 
-		printk(KERN_ALERT "Writer released. Writer count = %d\n", dev->nwriters);
+		printk(KERN_ALERT "Writer released device. ");
 		#endif
+		
+		dev->nwriters--;
 	}
 	else if((filp->f_flags & O_ACCMODE) == O_RDONLY)
 	{
-		dev->nreaders--;
-		
 		#ifdef DEBUG_PRINT 
-		printk(KERN_ALERT "Reader released. Reader count = %d\n", dev->nreaders);
+		printk(KERN_ALERT "Reader released device. ");
 		#endif
+		
+		dev->nreaders--;
+	}
+	
+	#ifdef DEBUG_PRINT 
+	printk(KERN_ALERT "Writer count = %d, Reader count = %d\n", dev->nwriters, dev->nreaders);
+	#endif
+	
+	// free buffer if no open processes
+	if((dev->nwriters + dev->nreaders) == 0)
+	{
+		#ifdef DEBUG_PRINT 
+		printk(KERN_ALERT "No open processes. Freeing buffer memory...\n");
+		#endif
+		
+		kfree(dev->buffer);
+		dev->buffer = NULL;
+		dev->end = NULL;
+		dev->wp = NULL;
+		dev->rp = NULL;
+		dev->itemcount = 0;
 	}
 	
 	// release mutex
 	up(&dev->sem);
-	
-	// TODO - actually implement this.
-	// IMPLEMENT THIS FUNCTION 
-	//
 	
 	return 0;
 }
@@ -165,6 +211,10 @@ static ssize_t scull_b_write(struct file *filp, const char __user *buf, size_t c
 		// release mutex and exit if no active readers
 		if(!dev->nreaders)
 		{
+			#ifdef DEBUG_PRINT 
+			printk(KERN_ALERT "Buffer full with no active readers. Write attempt exiting...\n");
+			#endif
+			
 			up(&dev->sem);
 			return 0;
 		}
@@ -226,6 +276,10 @@ static ssize_t scull_b_read(struct file *filp, char __user *buf, size_t count, l
 		// release mutex and exit if no active writers
 		if(!dev->nwriters)
 		{
+			#ifdef DEBUG_PRINT 
+			printk(KERN_ALERT "Buffer empty with no active writers. Read attempt exiting...\n");
+			#endif
+			
 			up(&dev->sem);
 			return 0;
 		}
@@ -288,19 +342,17 @@ void scull_b_cleanup_module(void)
 	printk(KERN_ALERT "Unloading %u scull buffers\n", scull_b_nr_devs);
 	#endif
 	
-	// free scull devices
+	// clean up devices
 	if (scull_b_devices) 
 	{
-		for (i = 0; i < scull_b_nr_devs; i++) {
+		// free memory buffer and remove cdev from each device 
+		for (i = 0; i < scull_b_nr_devs; i++)
+		{
 			cdev_del(&scull_b_devices[i].cdev);
+			kfree(scull_b_devices[i].buffer);
 		}
 		
-		kfree(scull_b_devices);
-	}
-	
-	// free buffers\n
-	if(scull_b_buffers)
-	{
+		// remove device memory itself
 		kfree(scull_b_buffers);
 	}
 	
@@ -357,24 +409,16 @@ int scull_b_init_module(void)
 	}
 	memset(scull_b_devices, 0, scull_b_nr_devs * sizeof(struct scull_buffer));
 	
-	// allocate buffer space for each device
-	scull_b_buffers = kmalloc(scull_b_nr_devs * NITEMS * SCULL_B_ITEM_SIZE, GFP_KERNEL);
-	if (!scull_b_buffers)
-	{
-		result = -ENOMEM;
-		goto fail;  /* Make this more graceful */
-	}
-	memset(scull_b_buffers, 0, scull_b_nr_devs * NITEMS * SCULL_B_ITEM_SIZE);
 		
 	// initialize each device
 	for (i = 0; i < scull_b_nr_devs; i++) {
 		init_waitqueue_head(&(scull_b_devices[i].inq));
 		init_waitqueue_head(&(scull_b_devices[i].outq));
-		scull_b_devices[i].buffer = scull_b_buffers + i * NITEMS * SCULL_B_ITEM_SIZE;
-		scull_b_devices[i].end = scull_b_devices[i].buffer + NITEMS * SCULL_B_ITEM_SIZE;
 		scull_b_devices[i].buffersize = NITEMS;
-		scull_b_devices[i].rp = scull_b_devices[i].buffer;
-		scull_b_devices[i].wp = scull_b_devices[i].buffer;
+		scull_b_devices[i].buffer = NULL;
+		scull_b_devices[i].end = NULL;
+		scull_b_devices[i].rp = NULL;
+		scull_b_devices[i].wp = NULL;
 		scull_b_devices[i].itemcount = 0;
 		scull_b_devices[i].nreaders = 0;
 		scull_b_devices[i].nwriters = 0;
