@@ -159,19 +159,24 @@ static ssize_t scull_b_write(struct file *filp, const char __user *buf, size_t c
 	if(down_interruptible(&dev->sem))
 		return -1;
 	
-	// take action if item buffer is full
-	if(dev->itemcount >= dev->buffersize)
+	// wait until slot opens up 
+	while(dev->itemcount >= dev->buffersize)
 	{
-		if(dev->nreaders) // sleep if readers are opened
-		{
-			// TODO
-			//wait_event_interruptible(dev->inq, condition)
-		}
-		else // otherwise release mutex and exit
+		// release mutex and exit if no active readers
+		if(!dev->nreaders)
 		{
 			up(&dev->sem);
 			return 0;
 		}
+		
+		// otherwise release mutex and go to sleep
+		up(&dev->sem);
+		if(wait_event_interruptible(dev->inq, dev->itemcount < dev->buffersize))
+			return -1;
+		
+		// acquire mutex again
+		if(down_interruptible(&dev->sem))
+			return -1;
 	}
 
 	// clamp byte count (to make sure it fits within slot size)
@@ -184,9 +189,10 @@ static ssize_t scull_b_write(struct file *filp, const char __user *buf, size_t c
 		clamped_count = count;
 	}
 	
-	// copy item to buffer and increment item count
+	// copy item to buffer, increment item count, and send wake up signal
 	copy_from_user(dev->wp, buf, clamped_count);
 	dev->itemcount++;
+	wake_up_interruptible(&dev->outq);
 	
 	#ifdef DEBUG_PRINT 
 	printk(KERN_ALERT "Added item. Item count = %d\n", dev->itemcount);
@@ -214,23 +220,30 @@ static ssize_t scull_b_read(struct file *filp, char __user *buf, size_t count, l
 	if(down_interruptible(&dev->sem))
 		return -1;
 	
-	// wait for producers
-	if(dev->itemcount == 0)
+	// wait until item to consume
+	while(dev->itemcount == 0)
 	{
-		if(dev->nwriters) // sleep if producers are opened
-		{
-			// TODO sleep
-		}
-		else // otherwise release mutex and exit
+		// release mutex and exit if no active writers
+		if(!dev->nwriters)
 		{
 			up(&dev->sem);
 			return 0;
 		}
+		
+		// otherwise release mutex and go to sleep
+		up(&dev->sem);
+		if(wait_event_interruptible(dev->outq, dev->itemcount > 0))
+			return -1;
+		
+		// acquire mutex again
+		if(down_interruptible(&dev->sem))
+			return -1;
 	}
 	
 	// copy item from buffer and decrement item count
 	copy_to_user(buf, dev->rp, SCULL_B_ITEM_SIZE);
 	dev->itemcount--;
+	wake_up_interruptible(&dev->inq);
 	
 	#ifdef DEBUG_PRINT 
 	printk(KERN_ALERT "Removed item. Item count = %d\n", dev->itemcount);

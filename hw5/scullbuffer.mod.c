@@ -32,14 +32,21 @@ __attribute__((section("__versions"))) = {
 	{ 0xd1e8c1b8, __VMLINUX_SYMBOL_STR(down_interruptible) },
 	{ 0x7485e15e, __VMLINUX_SYMBOL_STR(unregister_chrdev_region) },
 	{ 0x1f1b22bc, __VMLINUX_SYMBOL_STR(nonseekable_open) },
+	{ 0xa6682fdd, __VMLINUX_SYMBOL_STR(__init_waitqueue_head) },
 	{ 0xb44ad4b3, __VMLINUX_SYMBOL_STR(_copy_to_user) },
 	{ 0xfb578fc5, __VMLINUX_SYMBOL_STR(memset) },
 	{ 0x27e1a049, __VMLINUX_SYMBOL_STR(printk) },
+	{ 0xa1c76e0a, __VMLINUX_SYMBOL_STR(_cond_resched) },
+	{ 0xfe487975, __VMLINUX_SYMBOL_STR(init_wait_entry) },
 	{ 0x8eaaada1, __VMLINUX_SYMBOL_STR(cdev_add) },
 	{ 0xdb7305a1, __VMLINUX_SYMBOL_STR(__stack_chk_fail) },
+	{ 0x1000e51, __VMLINUX_SYMBOL_STR(schedule) },
 	{ 0xbdfb6dbb, __VMLINUX_SYMBOL_STR(__fentry__) },
+	{ 0xfe768495, __VMLINUX_SYMBOL_STR(__wake_up) },
+	{ 0x237a015a, __VMLINUX_SYMBOL_STR(prepare_to_wait_event) },
 	{ 0x37a0cba, __VMLINUX_SYMBOL_STR(kfree) },
 	{ 0x17c8215e, __VMLINUX_SYMBOL_STR(up) },
+	{ 0xd4fa5c30, __VMLINUX_SYMBOL_STR(finish_wait) },
 	{ 0x362ef408, __VMLINUX_SYMBOL_STR(_copy_from_user) },
 	{ 0x88db9f48, __VMLINUX_SYMBOL_STR(__check_object_size) },
 	{ 0x29537c9e, __VMLINUX_SYMBOL_STR(alloc_chrdev_region) },
@@ -51,4 +58,4 @@ __attribute__((section(".modinfo"))) =
 "depends=";
 
 
-MODULE_INFO(srcversion, "BD5E6CB70F33B47AAE79BDE");
+MODULE_INFO(srcversion, "9D8C829B43356ABBA6DA0CA");
