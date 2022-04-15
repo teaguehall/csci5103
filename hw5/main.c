@@ -88,7 +88,7 @@ static int scull_b_open(struct inode *inode, struct file *filp)
 	if(down_interruptible(&dev->sem))
 	{
 		#ifdef PRINT_INFO 
-		printk(KERN_ALERT "INFO: Error while grabbing mutex. Exiting...\n");
+		printk(KERN_INFO "INFO: Error while grabbing mutex. Exiting...\n");
 		#endif
 		
 		return -1;
@@ -100,7 +100,7 @@ static int scull_b_open(struct inode *inode, struct file *filp)
 		if(!dev->buffer)
 		{
 			#ifdef PRINT_INFO 
-			printk(KERN_ALERT "INFO: Allocating buffer memory for %d items\n", NITEMS);
+			printk(KERN_INFO "INFO: Allocating buffer memory for %d items\n", NITEMS);
 			#endif
 			
 			// grab memory
@@ -108,7 +108,7 @@ static int scull_b_open(struct inode *inode, struct file *filp)
 			if (!dev->buffer)
 			{
 				#ifdef PRINT_INFO 
-				printk(KERN_ALERT "INFO: Error while allocating buffer memory. Exiting...\n");
+				printk(KERN_INFO "INFO: Error while allocating buffer memory. Exiting...\n");
 				#endif
 				
 				// release mutex and indicate failure
@@ -128,7 +128,7 @@ static int scull_b_open(struct inode *inode, struct file *filp)
 		}
 		
 		#ifdef PRINT_INFO 
-		printk(KERN_ALERT "INFO: Producer successfully opened device\n");
+		printk(KERN_INFO "INFO: Producer successfully opened device\n");
 		#endif
 		
 		dev->nwriters++;
@@ -136,14 +136,14 @@ static int scull_b_open(struct inode *inode, struct file *filp)
 	else if((filp->f_flags & O_ACCMODE) == O_RDONLY) // consumer
 	{
 		#ifdef PRINT_INFO 
-		printk(KERN_ALERT "INFO: Reader successfully opened device\n");
+		printk(KERN_INFO "INFO: Reader successfully opened device\n");
 		#endif
 		
 		dev->nreaders++;
 	}
 	
 	#ifdef PRINT_INFO
-	printk(KERN_ALERT "INFO: Writer count = %d, Reader count = %d\n", dev->nwriters, dev->nreaders);
+	printk(KERN_INFO "INFO: Writer count = %d, Reader count = %d\n", dev->nwriters, dev->nreaders);
 	#endif
 	
 	// release mutex
@@ -162,7 +162,7 @@ static int scull_b_release(struct inode *inode, struct file *filp)
 	if(down_interruptible(&dev->sem))
 	{
 		#ifdef PRINT_INFO 
-		printk(KERN_ALERT "INFO: Error while grabbing mutex. Exiting...\n");
+		printk(KERN_INFO "INFO: Error while grabbing mutex. Exiting...\n");
 		#endif
 		
 		return -1;
@@ -171,29 +171,35 @@ static int scull_b_release(struct inode *inode, struct file *filp)
 	if((filp->f_flags & O_ACCMODE) == O_WRONLY)
 	{
 		#ifdef PRINT_INFO 
-		printk(KERN_ALERT "INFO: Writer closed device\n");
+		printk(KERN_INFO "INFO: Writer closed device\n");
 		#endif
 		
 		dev->nwriters--;
+		
+		// send wake up signal to consumers
+		wake_up_interruptible(&dev->outq);
 	}
 	else if((filp->f_flags & O_ACCMODE) == O_RDONLY)
 	{
 		#ifdef PRINT_INFO 
-		printk(KERN_ALERT "INFO: Reader closed device\n");
+		printk(KERN_INFO "INFO: Reader closed device\n");
 		#endif
 		
 		dev->nreaders--;
+		
+		// send wake up signal to producers
+		wake_up_interruptible(&dev->inq);
 	}
 	
 	#ifdef PRINT_INFO 
-	printk(KERN_ALERT "INFO: Writer count = %d, Reader count = %d\n", dev->nwriters, dev->nreaders);
+	printk(KERN_INFO "INFO: Writer count = %d, Reader count = %d\n", dev->nwriters, dev->nreaders);
 	#endif
 	
 	// free buffer if no open processes
 	if((dev->nwriters + dev->nreaders) == 0)
 	{
 		#ifdef PRINT_INFO 
-		printk(KERN_ALERT "INFO: No open processes. Freeing buffer memory...\n");
+		printk(KERN_INFO "INFO: No open processes. Freeing buffer memory...\n");
 		#endif
 		
 		kfree(dev->buffer);
@@ -219,7 +225,7 @@ static ssize_t scull_b_write(struct file *filp, const char __user *buf, size_t c
 	if(down_interruptible(&dev->sem))
 	{
 		#ifdef PRINT_INFO 
-		printk(KERN_ALERT "INFO: Error while writer grabbing mutex. Exiting...\n");
+		printk(KERN_INFO "INFO: Error while writer grabbing mutex. Exiting...\n");
 		#endif
 		
 		return -1;
@@ -232,7 +238,7 @@ static ssize_t scull_b_write(struct file *filp, const char __user *buf, size_t c
 		if(!dev->nreaders)
 		{
 			#ifdef PRINT_INFO 
-			printk(KERN_ALERT "INFO: Buffer full with no active readers. Write attempt exiting...\n");
+			printk(KERN_INFO "INFO: Buffer full with no active readers. Write attempt exiting...\n");
 			#endif
 			
 			up(&dev->sem);
@@ -240,23 +246,29 @@ static ssize_t scull_b_write(struct file *filp, const char __user *buf, size_t c
 		}
 		
 		#ifdef PRINT_INFO 
-		printk(KERN_ALERT "INFO: Writer going to sleep\n");
+		printk(KERN_INFO "INFO: Writer going to sleep\n");
 		#endif
 		
 		// otherwise release mutex and go to sleep
 		up(&dev->sem);
-		if(wait_event_interruptible(dev->inq, dev->itemcount < dev->buffersize))
+		if(wait_event_interruptible(dev->inq, (dev->itemcount < dev->buffersize || dev->nreaders == 0)))
+		{
+			#ifdef PRINT_INFO 
+			printk(KERN_INFO "INFO: Error while writer waiting for wakeup. Exiting...\n");
+			#endif
+			
 			return -1;
+		}	
 		
 		#ifdef PRINT_INFO 
-		printk(KERN_ALERT "INFO: Writer waking up\n");
+		printk(KERN_INFO "INFO: Writer waking up\n");
 		#endif
 		
 		// acquire mutex again
 		if(down_interruptible(&dev->sem))
 		{
 			#ifdef PRINT_INFO 
-			printk(KERN_ALERT "INFO: Error while reader grabbing mutex. Exiting...\n");
+			printk(KERN_INFO "INFO: Error while reader grabbing mutex. Exiting...\n");
 			#endif
 		
 			return -1;
@@ -281,7 +293,7 @@ static ssize_t scull_b_write(struct file *filp, const char __user *buf, size_t c
 	wake_up_interruptible(&dev->outq);
 	
 	#ifdef PRINT_INFO 
-	printk(KERN_ALERT "INFO: Write succeeded. Item count = %d\n", dev->itemcount);
+	printk(KERN_INFO "INFO: Write succeeded. Item count = %d\n", dev->itemcount);
 	#endif
 	
 	// increment write pointer (roll-over if necessary).
@@ -306,7 +318,7 @@ static ssize_t scull_b_read(struct file *filp, char __user *buf, size_t count, l
 	if(down_interruptible(&dev->sem))
 	{
 		#ifdef PRINT_INFO 
-		printk(KERN_ALERT "INFO: Error while reader grabbing mutex. Exiting...\n");
+		printk(KERN_INFO "INFO: Error while reader grabbing mutex. Exiting...\n");
 		#endif
 		
 		return -1;
@@ -319,7 +331,7 @@ static ssize_t scull_b_read(struct file *filp, char __user *buf, size_t count, l
 		if(!dev->nwriters)
 		{
 			#ifdef PRINT_INFO 
-			printk(KERN_ALERT "INFO: Buffer empty with no active writers. Reader exiting...\n");
+			printk(KERN_INFO "INFO: Buffer empty with no active writers. Reader exiting...\n");
 			#endif
 			
 			up(&dev->sem);
@@ -327,22 +339,22 @@ static ssize_t scull_b_read(struct file *filp, char __user *buf, size_t count, l
 		}
 		
 		#ifdef PRINT_INFO 
-		printk(KERN_ALERT "INFO: Reader going to sleep\n");
+		printk(KERN_INFO "INFO: Reader going to sleep\n");
 		#endif
 		
 		// otherwise release mutex and go to sleep
 		up(&dev->sem);
-		if(wait_event_interruptible(dev->outq, dev->itemcount > 0))
+		if(wait_event_interruptible(dev->outq, (dev->itemcount > 0 || dev->nwriters == 0)))
 		{
 			#ifdef PRINT_INFO 
-			printk(KERN_ALERT "INFO: Error while reader waiting for wakeup. Exiting...\n");
+			printk(KERN_INFO "INFO: Error while reader waiting for wakeup. Exiting...\n");
 			#endif
 			
 			return -1;
 		}
 		
 		#ifdef PRINT_INFO 
-		printk(KERN_ALERT "INFO: Reader waking up\n");
+		printk(KERN_INFO "INFO: Reader waking up\n");
 		#endif
 			
 		
@@ -350,7 +362,7 @@ static ssize_t scull_b_read(struct file *filp, char __user *buf, size_t count, l
 		if(down_interruptible(&dev->sem))
 		{
 			#ifdef PRINT_INFO 
-			printk(KERN_ALERT "INFO: Error while reader waiting for wakeup. Exiting...\n");
+			printk(KERN_INFO "INFO: Error while reader waiting for wakeup. Exiting...\n");
 			#endif
 			
 			return -1;
@@ -363,7 +375,7 @@ static ssize_t scull_b_read(struct file *filp, char __user *buf, size_t count, l
 	wake_up_interruptible(&dev->inq);
 	
 	#ifdef PRINT_INFO 
-	printk(KERN_ALERT "INFO: Read succeeded. Item count = %d\n", dev->itemcount);
+	printk(KERN_INFO "INFO: Read succeeded. Item count = %d\n", dev->itemcount);
 	#endif
 	
 	// increment read pointer (roll-over if necessary).
@@ -402,7 +414,7 @@ void scull_b_cleanup_module(void)
 	dev_t devno = MKDEV(scull_major, scull_minor);
 	
 	#ifdef PRINT_INFO 
-	printk(KERN_ALERT "INFO: Unloading %u scull buffers\n", scull_b_nr_devs);
+	printk(KERN_INFO "INFO: Unloading %u scull buffers\n", scull_b_nr_devs);
 	#endif
 	
 	// clean up devices
