@@ -35,7 +35,7 @@
 #include <linux/sched/signal.h>
 #include "scullbuffer.h"	/* local definitions */
 
-//#define DEBUG_PRINT
+#define PRINT_INFO
 
 /*
  * Our parameters which can be set at load time.
@@ -86,25 +86,31 @@ static int scull_b_open(struct inode *inode, struct file *filp)
 	
 	// grab mutex
 	if(down_interruptible(&dev->sem))
-		return -ERESTARTSYS;
-	
-	if((filp->f_flags & O_ACCMODE) == O_WRONLY) // producer
 	{
-		#ifdef DEBUG_PRINT 
-		printk(KERN_ALERT "Writer opened device. ");
+		#ifdef PRINT_INFO 
+		printk(KERN_ALERT "INFO: Error while grabbing mutex. Exiting...\n");
 		#endif
 		
+		return -1;
+	}
+	
+	if((filp->f_flags & O_ACCMODE) == O_WRONLY) // producer
+	{	
 		// allocate buffer memory if currently null
 		if(!dev->buffer)
 		{
-			#ifdef DEBUG_PRINT 
-			printk(KERN_ALERT "Allocating buffer memory for %d items\n", NITEMS);
+			#ifdef PRINT_INFO 
+			printk(KERN_ALERT "INFO: Allocating buffer memory for %d items\n", NITEMS);
 			#endif
 			
 			// grab memory
 			dev->buffer = kmalloc(NITEMS * SCULL_B_ITEM_SIZE, GFP_KERNEL);
 			if (!dev->buffer)
 			{
+				#ifdef PRINT_INFO 
+				printk(KERN_ALERT "INFO: Error while allocating buffer memory. Exiting...\n");
+				#endif
+				
 				// release mutex and indicate failure
 				up(&dev->sem);
 				return -1;
@@ -121,24 +127,27 @@ static int scull_b_open(struct inode *inode, struct file *filp)
 			dev->itemcount = 0;
 		}
 		
+		#ifdef PRINT_INFO 
+		printk(KERN_ALERT "INFO: Producer successfully opened device\n");
+		#endif
+		
 		dev->nwriters++;
 	}
 	else if((filp->f_flags & O_ACCMODE) == O_RDONLY) // consumer
 	{
-		#ifdef DEBUG_PRINT 
-		printk(KERN_ALERT "Reader opened device. ");
+		#ifdef PRINT_INFO 
+		printk(KERN_ALERT "INFO: Reader successfully opened device\n");
 		#endif
 		
 		dev->nreaders++;
 	}
 	
-	#ifdef DEBUG_PRINT 
-	printk(KERN_ALERT "Writer count = %d, Reader count = %d\n", dev->nwriters, dev->nreaders);
+	#ifdef PRINT_INFO
+	printk(KERN_ALERT "INFO: Writer count = %d, Reader count = %d\n", dev->nwriters, dev->nreaders);
 	#endif
 	
 	// release mutex
 	up(&dev->sem);
-	
 	return nonseekable_open(inode, filp);
 }
 
@@ -151,34 +160,40 @@ static int scull_b_release(struct inode *inode, struct file *filp)
 	
 	// grab mutex
 	if(down_interruptible(&dev->sem))
-		return -ERESTARTSYS;
+	{
+		#ifdef PRINT_INFO 
+		printk(KERN_ALERT "INFO: Error while grabbing mutex. Exiting...\n");
+		#endif
+		
+		return -1;
+	}
 	
 	if((filp->f_flags & O_ACCMODE) == O_WRONLY)
 	{
-		#ifdef DEBUG_PRINT 
-		printk(KERN_ALERT "Writer released device. ");
+		#ifdef PRINT_INFO 
+		printk(KERN_ALERT "INFO: Writer closed device\n");
 		#endif
 		
 		dev->nwriters--;
 	}
 	else if((filp->f_flags & O_ACCMODE) == O_RDONLY)
 	{
-		#ifdef DEBUG_PRINT 
-		printk(KERN_ALERT "Reader released device. ");
+		#ifdef PRINT_INFO 
+		printk(KERN_ALERT "INFO: Reader closed device\n");
 		#endif
 		
 		dev->nreaders--;
 	}
 	
-	#ifdef DEBUG_PRINT 
-	printk(KERN_ALERT "Writer count = %d, Reader count = %d\n", dev->nwriters, dev->nreaders);
+	#ifdef PRINT_INFO 
+	printk(KERN_ALERT "INFO: Writer count = %d, Reader count = %d\n", dev->nwriters, dev->nreaders);
 	#endif
 	
 	// free buffer if no open processes
 	if((dev->nwriters + dev->nreaders) == 0)
 	{
-		#ifdef DEBUG_PRINT 
-		printk(KERN_ALERT "No open processes. Freeing buffer memory...\n");
+		#ifdef PRINT_INFO 
+		printk(KERN_ALERT "INFO: No open processes. Freeing buffer memory...\n");
 		#endif
 		
 		kfree(dev->buffer);
@@ -191,7 +206,6 @@ static int scull_b_release(struct inode *inode, struct file *filp)
 	
 	// release mutex
 	up(&dev->sem);
-	
 	return 0;
 }
 
@@ -203,7 +217,13 @@ static ssize_t scull_b_write(struct file *filp, const char __user *buf, size_t c
 	
 	// grab mutex
 	if(down_interruptible(&dev->sem))
+	{
+		#ifdef PRINT_INFO 
+		printk(KERN_ALERT "INFO: Error while writer grabbing mutex. Exiting...\n");
+		#endif
+		
 		return -1;
+	}
 	
 	// wait until slot opens up 
 	while(dev->itemcount >= dev->buffersize)
@@ -211,22 +231,36 @@ static ssize_t scull_b_write(struct file *filp, const char __user *buf, size_t c
 		// release mutex and exit if no active readers
 		if(!dev->nreaders)
 		{
-			#ifdef DEBUG_PRINT 
-			printk(KERN_ALERT "Buffer full with no active readers. Write attempt exiting...\n");
+			#ifdef PRINT_INFO 
+			printk(KERN_ALERT "INFO: Buffer full with no active readers. Write attempt exiting...\n");
 			#endif
 			
 			up(&dev->sem);
 			return 0;
 		}
 		
+		#ifdef PRINT_INFO 
+		printk(KERN_ALERT "INFO: Writer going to sleep\n");
+		#endif
+		
 		// otherwise release mutex and go to sleep
 		up(&dev->sem);
 		if(wait_event_interruptible(dev->inq, dev->itemcount < dev->buffersize))
 			return -1;
 		
+		#ifdef PRINT_INFO 
+		printk(KERN_ALERT "INFO: Writer waking up\n");
+		#endif
+		
 		// acquire mutex again
 		if(down_interruptible(&dev->sem))
+		{
+			#ifdef PRINT_INFO 
+			printk(KERN_ALERT "INFO: Error while reader grabbing mutex. Exiting...\n");
+			#endif
+		
 			return -1;
+		}
 		
 		// TODO - add special case.
 	}
@@ -246,8 +280,8 @@ static ssize_t scull_b_write(struct file *filp, const char __user *buf, size_t c
 	dev->itemcount++;
 	wake_up_interruptible(&dev->outq);
 	
-	#ifdef DEBUG_PRINT 
-	printk(KERN_ALERT "Added item. Item count = %d\n", dev->itemcount);
+	#ifdef PRINT_INFO 
+	printk(KERN_ALERT "INFO: Write succeeded. Item count = %d\n", dev->itemcount);
 	#endif
 	
 	// increment write pointer (roll-over if necessary).
@@ -270,30 +304,57 @@ static ssize_t scull_b_read(struct file *filp, char __user *buf, size_t count, l
 	
 	// grab mutex
 	if(down_interruptible(&dev->sem))
+	{
+		#ifdef PRINT_INFO 
+		printk(KERN_ALERT "INFO: Error while reader grabbing mutex. Exiting...\n");
+		#endif
+		
 		return -1;
-	
+	}
+
 	// wait until item to consume
 	while(dev->itemcount == 0)
 	{
 		// release mutex and exit if no active writers
 		if(!dev->nwriters)
 		{
-			#ifdef DEBUG_PRINT 
-			printk(KERN_ALERT "Buffer empty with no active writers. Read attempt exiting...\n");
+			#ifdef PRINT_INFO 
+			printk(KERN_ALERT "INFO: Buffer empty with no active writers. Reader exiting...\n");
 			#endif
 			
 			up(&dev->sem);
 			return 0;
 		}
 		
+		#ifdef PRINT_INFO 
+		printk(KERN_ALERT "INFO: Reader going to sleep\n");
+		#endif
+		
 		// otherwise release mutex and go to sleep
 		up(&dev->sem);
 		if(wait_event_interruptible(dev->outq, dev->itemcount > 0))
+		{
+			#ifdef PRINT_INFO 
+			printk(KERN_ALERT "INFO: Error while reader waiting for wakeup. Exiting...\n");
+			#endif
+			
 			return -1;
+		}
+		
+		#ifdef PRINT_INFO 
+		printk(KERN_ALERT "INFO: Reader waking up\n");
+		#endif
+			
 		
 		// acquire mutex again
 		if(down_interruptible(&dev->sem))
+		{
+			#ifdef PRINT_INFO 
+			printk(KERN_ALERT "INFO: Error while reader waiting for wakeup. Exiting...\n");
+			#endif
+			
 			return -1;
+		}
 	}
 	
 	// copy item from buffer and decrement item count
@@ -301,8 +362,8 @@ static ssize_t scull_b_read(struct file *filp, char __user *buf, size_t count, l
 	dev->itemcount--;
 	wake_up_interruptible(&dev->inq);
 	
-	#ifdef DEBUG_PRINT 
-	printk(KERN_ALERT "Removed item. Item count = %d\n", dev->itemcount);
+	#ifdef PRINT_INFO 
+	printk(KERN_ALERT "INFO: Read succeeded. Item count = %d\n", dev->itemcount);
 	#endif
 	
 	// increment read pointer (roll-over if necessary).
@@ -340,8 +401,8 @@ void scull_b_cleanup_module(void)
 	int i;
 	dev_t devno = MKDEV(scull_major, scull_minor);
 	
-	#ifdef DEBUG_PRINT 
-	printk(KERN_ALERT "Unloading %u scull buffers\n", scull_b_nr_devs);
+	#ifdef PRINT_INFO 
+	printk(KERN_ALERT "INFO: Unloading %u scull buffers\n", scull_b_nr_devs);
 	#endif
 	
 	// clean up devices
@@ -373,7 +434,7 @@ static void scull_b_setup_cdev(struct scull_buffer *dev, int index)
 	err = cdev_add (&dev->cdev, devno, 1);
 	// fail gracefully if need be
 	if (err)
-		printk(KERN_NOTICE "Error %d adding scull%d", err, index);
+		printk(KERN_NOTICE "INFO: Error %d adding scull%d", err, index);
 }
 
 int scull_b_init_module(void)
@@ -381,8 +442,8 @@ int scull_b_init_module(void)
 	int i, result;
 	dev_t devno;
 	
-	#ifdef DEBUG_PRINT 
-	printk(KERN_ALERT "Loading %u scull buffers\n", scull_b_nr_devs);
+	#ifdef PRINT_INFO 
+	printk(KERN_INFO "Loading %u scull buffers\n", scull_b_nr_devs);
 	#endif
 	
 	// if major number specified, try to register it
@@ -398,7 +459,7 @@ int scull_b_init_module(void)
 	}
 	if (result < 0)  // exit with error
 	{
-		printk(KERN_WARNING "scullbuffer: can't get major %d\n", scull_major);
+		printk(KERN_NOTICE "scullbuffer: can't get major %d\n", scull_major);
 		return result;
 	}
 	
